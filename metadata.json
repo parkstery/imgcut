@@ -1,0 +1,6 @@
+{
+  "name": "Vector & Image Studio",
+  "description": "그림판의 이미지 편집 기능과 파워포인트의 벡터 도형 그리기, 레이어 관리 및 SVG 내보내기를 지원하는 전문 그래픽 웹 애플리케이션",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
