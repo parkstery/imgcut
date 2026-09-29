@@ -21,6 +21,8 @@ import {
   Hexagon,
   Minus,
   ArrowUpRight,
+  Waypoints,
+  Spline,
   ChevronDown
 } from 'lucide-react';
 import { ToolType, ShapeType } from '../types';
@@ -50,7 +52,9 @@ const SHAPE_ITEMS: { type: ShapeType; label: string; icon: React.ReactNode }[] =
   { type: 'heart', label: '하트 도형', icon: <Heart className="w-4 h-4" /> },
   { type: 'hexagon', label: '육각형', icon: <Hexagon className="w-4 h-4" /> },
   { type: 'line', label: '직선', icon: <Minus className="w-4 h-4" /> },
-  { type: 'line-arrow', label: '화살표 선', icon: <ArrowUpRight className="w-4 h-4" /> }
+  { type: 'line-arrow', label: '화살표 선', icon: <ArrowUpRight className="w-4 h-4" /> },
+  { type: 'polyline', label: '연속 선그리기', icon: <Waypoints className="w-4 h-4" /> },
+  { type: 'arc', label: '아크 (호)', icon: <Spline className="w-4 h-4" /> },
 ];
 
 const STROKE_WIDTHS = [1, 2, 4, 8, 12, 20];
@@ -193,6 +197,38 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
+          id="tool-quick-polyline"
+          onClick={() => {
+            onSelectShapeType('polyline');
+            onSelectTool('shape');
+          }}
+          className={`p-2 rounded-md transition-colors ${
+            currentTool === 'shape' && selectedShapeType === 'polyline'
+              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+              : 'text-stone-300 hover:text-white hover:bg-stone-800'
+          }`}
+          title="연속 선그리기 — 클릭으로 노드 연결, 더블클릭/Enter로 완료, Esc 취소 (Shift=각도 스냅)"
+        >
+          <Waypoints className="w-4 h-4" />
+        </button>
+
+        <button
+          id="tool-quick-arc"
+          onClick={() => {
+            onSelectShapeType('arc');
+            onSelectTool('shape');
+          }}
+          className={`p-2 rounded-md transition-colors ${
+            currentTool === 'shape' && selectedShapeType === 'arc'
+              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+              : 'text-stone-300 hover:text-white hover:bg-stone-800'
+          }`}
+          title="아크 그리기 — 시작점 → 끝점 → 드래그로 반지름(휘어짐) 지정 후 클릭 완료"
+        >
+          <Spline className="w-4 h-4" />
+        </button>
+
+        <button
           id="tool-quick-rect"
           onClick={() => {
             onSelectShapeType('rect');
@@ -232,20 +268,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onSelectTool('shape');
               setShowShapeMenu(!showShapeMenu);
             }}
-            className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-md transition-colors ${
-              currentTool === 'shape' && selectedShapeType !== 'line' && selectedShapeType !== 'line-arrow' && selectedShapeType !== 'rect' && selectedShapeType !== 'ellipse'
+            className={`flex items-center gap-0.5 p-2 rounded-md transition-colors ${
+              currentTool === 'shape' &&
+              selectedShapeType !== 'line' &&
+              selectedShapeType !== 'line-arrow' &&
+              selectedShapeType !== 'polyline' &&
+              selectedShapeType !== 'arc' &&
+              selectedShapeType !== 'rect' &&
+              selectedShapeType !== 'ellipse'
                 ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
                 : 'text-stone-300 hover:text-white hover:bg-stone-800'
             }`}
-            title="기타 도형 모음 (U)"
+            title={
+              selectedShapeType !== 'line' &&
+              selectedShapeType !== 'line-arrow' &&
+              selectedShapeType !== 'polyline' &&
+              selectedShapeType !== 'arc' &&
+              selectedShapeType !== 'rect' &&
+              selectedShapeType !== 'ellipse'
+                ? `${currentShape.label} (U)`
+                : '기타 도형 모음 (U)'
+            }
+            aria-label="기타 도형 모음"
           >
-            <Shapes className="w-4 h-4" />
-            <span className="text-xs font-medium hidden md:inline">
-              {selectedShapeType !== 'line' && selectedShapeType !== 'line-arrow' && selectedShapeType !== 'rect' && selectedShapeType !== 'ellipse'
-                ? currentShape.label
-                : '도형 더보기'}
-            </span>
-            <ChevronDown className="w-3 h-3 ml-0.5 opacity-70" />
+            {selectedShapeType !== 'line' &&
+            selectedShapeType !== 'line-arrow' &&
+            selectedShapeType !== 'polyline' &&
+            selectedShapeType !== 'arc' &&
+            selectedShapeType !== 'rect' &&
+            selectedShapeType !== 'ellipse' ? (
+              <span className="flex items-center justify-center w-5 h-5 [&>svg]:w-5 [&>svg]:h-5">
+                {currentShape.icon}
+              </span>
+            ) : (
+              <Shapes className="w-5 h-5" />
+            )}
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
           </button>
 
           {showShapeMenu && (

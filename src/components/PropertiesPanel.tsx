@@ -7,6 +7,7 @@ import {
   CanvasConfig,
 } from '../types';
 import { FONT_FAMILIES } from '../utils/colorUtils';
+import { finalizeArcGeometry } from '../utils/shapeGenerators';
 import {
   AlignLeft,
   AlignCenter,
@@ -31,6 +32,43 @@ import {
   Square,
   Circle,
 } from 'lucide-react';
+
+/** Visual property section card with clear title bar */
+const PropertyGroup: React.FC<{
+  title: string;
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, headerRight, children }) => (
+  <section className="rounded-lg border border-stone-600/70 bg-stone-950/40 overflow-hidden shadow-sm">
+    <div className="flex items-center justify-between gap-2 min-h-[32px] px-2.5 py-1.5 bg-stone-800 border-b border-stone-600/60">
+      <h3 className="text-xs font-bold tracking-tight" style={{ color: '#ffd230' }}>{title}</h3>
+      {headerRight}
+    </div>
+    <div className="p-2.5 space-y-2.5">{children}</div>
+  </section>
+);
+
+/** Keyboard nudge hint styled like [→] 1px / [→]+[SHIFT] 10px */
+const NudgeKeyHint: React.FC = () => {
+  const keyBox =
+    'inline-flex items-center justify-center rounded-[3px] border border-stone-300 bg-transparent text-stone-200 leading-none select-none';
+  return (
+    <div
+      className="flex items-center gap-1 shrink-0 text-[10px] text-stone-300 font-sans"
+      title="방향키: 1px 이동 · Shift+방향키: 10px 이동"
+    >
+      <kbd className={`${keyBox} w-[16px] h-[16px] text-[11px] font-normal`}>→</kbd>
+      <span className="text-stone-400 tracking-tight">1px</span>
+      <span className="text-stone-500 mx-0.5">/</span>
+      <kbd className={`${keyBox} w-[16px] h-[16px] text-[11px] font-normal`}>→</kbd>
+      <span className="text-stone-400 mx-px">+</span>
+      <kbd className={`${keyBox} h-[16px] px-1 text-[8px] font-semibold tracking-wide`}>
+        SHIFT
+      </kbd>
+      <span className="text-stone-400 tracking-tight">10px</span>
+    </div>
+  );
+};
 
 interface PropertiesPanelProps {
   selectedElement: CanvasElement | null;
@@ -249,7 +287,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   // Element is selected! Contextual PPT & Paint property panels
   const isShape = selectedElement.type === 'shape';
   const shape = isShape ? (selectedElement as ShapeElement) : null;
-  const isLine = isShape && (shape?.shapeType === 'line' || shape?.shapeType === 'line-arrow');
+  const isLine =
+    isShape &&
+    (shape?.shapeType === 'line' ||
+      shape?.shapeType === 'line-arrow' ||
+      shape?.shapeType === 'polyline' ||
+      shape?.shapeType === 'arc');
+  const isStraightLine =
+    isShape && (shape?.shapeType === 'line' || shape?.shapeType === 'line-arrow');
+  const isArc = isShape && shape?.shapeType === 'arc';
   const isText = selectedElement.type === 'text';
   const isImage = selectedElement.type === 'image';
   const isBrush = selectedElement.type === 'brush';
@@ -301,15 +347,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       </div>
 
       {/* Geometry / Transform */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-stone-300 font-medium block">
-            {isLine ? '위치 및 길이' : '위치 및 크기'}
-          </label>
-          <span className="text-[10px] text-amber-400/80 font-mono tracking-tight" title="선택 후 키보드 방향키로 1px, Shift+방향키로 10px씩 미세 이동할 수 있습니다.">
-            방향키로 1px / Shift로 10px 이동
-          </span>
-        </div>
+      <PropertyGroup
+        title={isStraightLine ? '위치 및 길이' : '위치 및 크기'}
+        headerRight={<NudgeKeyHint />}
+      >
         <div className="grid grid-cols-2 gap-2">
           <div>
             <span className="text-[10px] text-stone-500 block mb-0.5">X 좌표</span>
@@ -335,7 +376,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           </div>
           <div>
             <span className="text-[10px] text-stone-500 block mb-0.5">
-              {isLine ? '길이 (Length)' : '너비 (W)'}
+              {isStraightLine ? '길이 (Length)' : '너비 (W)'}
             </span>
             <input
               type="number"
@@ -347,7 +388,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
-          {isLine ? (
+          {isStraightLine ? (
             <div>
               <span className="text-[10px] text-stone-500 block mb-0.5">선 두께 (굵기)</span>
               <input
@@ -383,7 +424,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </div>
 
         {/* Rotation */}
-        <div className="flex items-center space-x-2 pt-1">
+        <div className="flex items-center space-x-2 pt-0.5">
           <RotateCw className="w-3.5 h-3.5 text-stone-400" />
           <span className="text-[10px] text-stone-400">회전:</span>
           <input
@@ -402,7 +443,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </div>
 
         {/* Opacity */}
-        <div className="flex items-center space-x-2 pt-1">
+        <div className="flex items-center space-x-2">
           <span className="text-[10px] text-stone-400">불투명도:</span>
           <input
             type="range"
@@ -418,17 +459,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             {Math.round(selectedElement.opacity * 100)}%
           </span>
         </div>
-      </div>
+      </PropertyGroup>
 
-      {/* SHAPE SPECIFIC PROPERTIES: Fill, Gradient, Stroke, Corner */}
+      {/* SHAPE SPECIFIC PROPERTIES: Stroke first, then Fill */}
       {isShape && shape && (
-        <div className="space-y-3 pt-3 border-t border-stone-800">
-          <label className="text-stone-300 font-medium block">
-            {isLine ? '선 스타일 및 화살표' : '채우기 및 테두리 (PPT 스타일)'}
-          </label>
-
-          {/* Line Type Toggle if Line */}
-          {isLine && (
+        <PropertyGroup title={isLine ? (isArc ? '아크 스타일' : '선 스타일 및 화살표') : '채우기 및 테두리'}>
+          {/* Line Type Toggle if straight Line */}
+          {isStraightLine && (
             <div className="space-y-1.5">
               <span className="text-[11px] text-stone-400">선 종류 (다음 그리기에도 유지)</span>
               <div className="flex items-center space-x-2">
@@ -470,10 +507,231 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {/* Fill Type: Solid vs None vs Gradient (for non-lines) */}
+          {/* Stroke / Outline — above fill */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] text-stone-400 font-medium">
+              {isLine ? (isArc ? '아크 색상 및 굵기' : '선 색상 및 굵기') : '윤곽선'}
+            </span>
+            <div className="flex items-center space-x-2">
+              <input
+                type="color"
+                value={shape.stroke === 'none' ? '#000000' : shape.stroke}
+                onChange={(e) => onUpdateElement({ ...shape, stroke: e.target.value })}
+                className="w-7 h-7 rounded border border-stone-700 bg-transparent cursor-pointer"
+              />
+              {!isLine && (
+                <button
+                  onClick={() => onUpdateElement({ ...shape, stroke: 'none' })}
+                  className={`px-2 py-1 rounded border text-[11px] ${
+                    shape.stroke === 'none' ? 'border-amber-500 text-amber-300' : 'border-stone-800 text-stone-400'
+                  }`}
+                >
+                  선 없음
+                </button>
+              )}
+              <div className="flex items-center space-x-1 flex-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={shape.strokeWidth}
+                  onChange={(e) => {
+                    const sw = Math.max(1, parseInt(e.target.value) || 1);
+                    onUpdateElement({
+                      ...shape,
+                      strokeWidth: sw,
+                      height: isStraightLine ? Math.max(sw * 4, 16) : shape.height,
+                    });
+                  }}
+                  className="w-14 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs"
+                />
+                <span className="text-[10px] text-stone-500">px</span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1 pt-1 overflow-x-auto py-0.5">
+              {[
+                '#000000',
+                '#FFFFFF',
+                '#EF4444',
+                '#F97316',
+                '#F59E0B',
+                '#10B981',
+                '#06B6D4',
+                '#3B82F6',
+                '#4F46E5',
+                '#8B5CF6',
+                '#EC4899',
+                '#64748B',
+              ].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => onUpdateElement({ ...shape, stroke: c })}
+                  className={`w-4 h-4 rounded-sm border shrink-0 transition-transform ${
+                    shape.stroke.toLowerCase() === c.toLowerCase()
+                      ? 'border-amber-400 ring-1 ring-amber-400 scale-110'
+                      : 'border-stone-700 hover:scale-110'
+                  }`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center space-x-1 mt-1">
+              {(['solid', 'dashed', 'dotted'] as const).map((style) => (
+                <button
+                  key={style}
+                  onClick={() => onUpdateElement({ ...shape, strokeDash: style })}
+                  className={`flex-1 py-1 rounded border text-[11px] capitalize ${
+                    shape.strokeDash === style
+                      ? 'border-amber-500 bg-amber-500/10 text-amber-300'
+                      : 'border-stone-800 text-stone-400'
+                  }`}
+                >
+                  {style === 'solid' ? '실선' : style === 'dashed' ? '파선' : '점선'}
+                </button>
+              ))}
+            </div>
+
+            {isArc && shape.points && shape.points.length >= 2 && (
+              <div className="space-y-1.5 pt-2 border-t border-stone-700/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-stone-400 font-medium">반지름 (휘어짐)</span>
+                  <span className="font-mono text-stone-300 text-[11px]">
+                    {Math.round(shape.arcRadius || 0)} px
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={(() => {
+                      const L = Math.hypot(
+                        shape.points[1].x - shape.points[0].x,
+                        shape.points[1].y - shape.points[0].y
+                      );
+                      return Math.max(1, Math.ceil(L / 2 + 1));
+                    })()}
+                    max={5000}
+                    value={Math.round(shape.arcRadius || 0)}
+                    onChange={(e) => {
+                      const absStart = {
+                        x: shape.x + shape.points![0].x,
+                        y: shape.y + shape.points![0].y,
+                      };
+                      const absEnd = {
+                        x: shape.x + shape.points![1].x,
+                        y: shape.y + shape.points![1].y,
+                      };
+                      const L = Math.hypot(absEnd.x - absStart.x, absEnd.y - absStart.y);
+                      const minR = L / 2 + 0.5;
+                      const r = Math.max(minR, parseFloat(e.target.value) || minR);
+                      const geom = finalizeArcGeometry(
+                        absStart,
+                        absEnd,
+                        r,
+                        !!shape.arcLarge,
+                        !!shape.arcSweep
+                      );
+                      onUpdateElement({
+                        ...shape,
+                        x: geom.x,
+                        y: geom.y,
+                        width: geom.width,
+                        height: geom.height,
+                        points: geom.points,
+                        arcRadius: geom.arcRadius,
+                        arcLarge: geom.arcLarge,
+                        arcSweep: geom.arcSweep,
+                      });
+                    }}
+                    className="flex-1 accent-amber-500"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={Math.round(shape.arcRadius || 0)}
+                    onChange={(e) => {
+                      const absStart = {
+                        x: shape.x + shape.points![0].x,
+                        y: shape.y + shape.points![0].y,
+                      };
+                      const absEnd = {
+                        x: shape.x + shape.points![1].x,
+                        y: shape.y + shape.points![1].y,
+                      };
+                      const L = Math.hypot(absEnd.x - absStart.x, absEnd.y - absStart.y);
+                      const minR = L / 2 + 0.5;
+                      const r = Math.max(minR, parseFloat(e.target.value) || minR);
+                      const geom = finalizeArcGeometry(
+                        absStart,
+                        absEnd,
+                        r,
+                        !!shape.arcLarge,
+                        !!shape.arcSweep
+                      );
+                      onUpdateElement({
+                        ...shape,
+                        x: geom.x,
+                        y: geom.y,
+                        width: geom.width,
+                        height: geom.height,
+                        points: geom.points,
+                        arcRadius: geom.arcRadius,
+                        arcLarge: geom.arcLarge,
+                        arcSweep: geom.arcSweep,
+                      });
+                    }}
+                    className="w-16 bg-stone-800 border border-stone-700 rounded px-1.5 py-1 text-stone-100 font-mono text-xs"
+                  />
+                </div>
+                <p className="text-[10px] text-stone-500">
+                  값이 작을수록 더 굽고, 클수록 직선에 가까워집니다. (최소 = 현 길이/2)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!shape.points || shape.points.length < 2 || shape.arcRadius == null) return;
+                    const absStart = {
+                      x: shape.x + shape.points[0].x,
+                      y: shape.y + shape.points[0].y,
+                    };
+                    const absEnd = {
+                      x: shape.x + shape.points[1].x,
+                      y: shape.y + shape.points[1].y,
+                    };
+                    const geom = finalizeArcGeometry(
+                      absStart,
+                      absEnd,
+                      shape.arcRadius,
+                      !!shape.arcLarge,
+                      !shape.arcSweep
+                    );
+                    onUpdateElement({
+                      ...shape,
+                      x: geom.x,
+                      y: geom.y,
+                      width: geom.width,
+                      height: geom.height,
+                      points: geom.points,
+                      arcRadius: geom.arcRadius,
+                      arcLarge: geom.arcLarge,
+                      arcSweep: geom.arcSweep,
+                    });
+                  }}
+                  className="w-full py-1 rounded border border-stone-700 text-[11px] text-stone-300 hover:bg-stone-800"
+                >
+                  휘는 방향 반전
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Fill Type: Solid vs None vs Gradient (for non-lines) — below stroke */}
           {!isLine && (
-            <div className="space-y-1.5">
-              <span className="text-[11px] text-stone-400">면 채우기</span>
+            <div className="space-y-1.5 pt-1 border-t border-stone-700/50">
+              <span className="text-[11px] text-stone-400 font-medium">면 채우기</span>
               <div className="flex items-center space-x-2">
                 <input
                   type="color"
@@ -528,7 +786,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </button>
               </div>
 
-              {/* Gradient options if active */}
               {shape.gradient?.enabled && (
                 <div className="bg-stone-800/60 p-2 rounded border border-stone-700 space-y-2 mt-1">
                   <div className="flex items-center justify-between">
@@ -580,98 +837,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {/* Stroke / Outline */}
-          <div className="space-y-1.5 pt-1">
-            <span className="text-[11px] text-stone-400">{isLine ? '선 색상 및 굵기' : '윤곽선 (Stroke)'}</span>
-            <div className="flex items-center space-x-2">
-              <input
-                type="color"
-                value={shape.stroke === 'none' ? '#000000' : shape.stroke}
-                onChange={(e) => onUpdateElement({ ...shape, stroke: e.target.value })}
-                className="w-7 h-7 rounded border border-stone-700 bg-transparent cursor-pointer"
-              />
-              {!isLine && (
-                <button
-                  onClick={() => onUpdateElement({ ...shape, stroke: 'none' })}
-                  className={`px-2 py-1 rounded border text-[11px] ${
-                    shape.stroke === 'none' ? 'border-amber-500 text-amber-300' : 'border-stone-800 text-stone-400'
-                  }`}
-                >
-                  선 없음
-                </button>
-              )}
-              <div className="flex items-center space-x-1 flex-1">
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={shape.strokeWidth}
-                  onChange={(e) => {
-                    const sw = Math.max(1, parseInt(e.target.value) || 1);
-                    onUpdateElement({
-                      ...shape,
-                      strokeWidth: sw,
-                      height: isLine ? Math.max(sw * 4, 16) : shape.height,
-                    });
-                  }}
-                  className="w-14 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs"
-                />
-                <span className="text-[10px] text-stone-500">px</span>
-              </div>
-            </div>
-
-            {/* Quick Stroke Color Chips */}
-            <div className="flex items-center space-x-1 pt-1 overflow-x-auto py-0.5">
-              {[
-                '#000000',
-                '#FFFFFF',
-                '#EF4444',
-                '#F97316',
-                '#F59E0B',
-                '#10B981',
-                '#06B6D4',
-                '#3B82F6',
-                '#4F46E5',
-                '#8B5CF6',
-                '#EC4899',
-                '#64748B',
-              ].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => onUpdateElement({ ...shape, stroke: c })}
-                  className={`w-4 h-4 rounded-sm border shrink-0 transition-transform ${
-                    shape.stroke.toLowerCase() === c.toLowerCase()
-                      ? 'border-amber-400 ring-1 ring-amber-400 scale-110'
-                      : 'border-stone-700 hover:scale-110'
-                  }`}
-                  style={{ backgroundColor: c }}
-                  title={c}
-                />
-              ))}
-            </div>
-
-            {/* Stroke Dash Style */}
-            <div className="flex items-center space-x-1 mt-1">
-              {(['solid', 'dashed', 'dotted'] as const).map((style) => (
-                <button
-                  key={style}
-                  onClick={() => onUpdateElement({ ...shape, strokeDash: style })}
-                  className={`flex-1 py-1 rounded border text-[11px] capitalize ${
-                    shape.strokeDash === style
-                      ? 'border-amber-500 bg-amber-500/10 text-amber-300'
-                      : 'border-stone-800 text-stone-400'
-                  }`}
-                >
-                  {style === 'solid' ? '실선' : style === 'dashed' ? '파선' : '점선'}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Corner Radius for Rect */}
           {!isLine && (shape.shapeType === 'rect' || shape.shapeType === 'rounded-rect') && (
-            <div className="space-y-1 pt-1">
+            <div className="space-y-1 pt-1 border-t border-stone-700/50">
               <div className="flex justify-between">
                 <span className="text-[11px] text-stone-400">모서리 둥글기 (Radius)</span>
                 <span className="font-mono text-stone-300">{shape.cornerRadius || 0}px</span>
@@ -688,7 +856,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               />
             </div>
           )}
-        </div>
+        </PropertyGroup>
       )}
 
       {/* TEXT SPECIFIC PROPERTIES */}
@@ -1150,9 +1318,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
       {/* DROP SHADOW (Supports all elements) */}
-      <div className="space-y-2 pt-3 border-t border-stone-800">
-        <div className="flex items-center justify-between">
-          <label className="text-stone-300 font-medium">그림자 효과 (Shadow)</label>
+      <PropertyGroup
+        title="그림자 효과"
+        headerRight={
           <input
             type="checkbox"
             checked={!!selectedElement.shadow?.enabled}
@@ -1169,11 +1337,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 },
               });
             }}
-            className="rounded border-stone-700 text-amber-500 focus:ring-0 cursor-pointer"
+            className="rounded border-stone-600 text-amber-500 focus:ring-0 cursor-pointer"
+            title="그림자 켜기/끄기"
           />
-        </div>
-
-        {selectedElement.shadow?.enabled && (
+        }
+      >
+        {selectedElement.shadow?.enabled ? (
           <div className="bg-stone-800/60 p-2.5 rounded border border-stone-700 space-y-2 text-[11px]">
             <div className="flex items-center justify-between">
               <span className="text-stone-400">그림자 색상</span>
@@ -1239,13 +1408,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </div>
             </div>
           </div>
+        ) : (
+          <p className="text-[11px] text-stone-500">그림자를 사용하려면 우측 체크박스를 켜세요.</p>
         )}
-      </div>
+      </PropertyGroup>
 
       {/* ARRANGE / Z-ORDER & ALIGNMENT (PowerPoint style) */}
-      <div className="space-y-2 pt-3 border-t border-stone-800">
-        <label className="text-stone-300 font-medium block">정렬 및 순서 (Arrange)</label>
-
+      <PropertyGroup title="정렬 및 순서">
         {/* Z-order controls */}
         <div className="grid grid-cols-4 gap-1">
           <button
@@ -1327,7 +1496,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <AlignVerticalJustifyEnd className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
+      </PropertyGroup>
     </aside>
   );
 };

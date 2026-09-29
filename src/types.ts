@@ -11,7 +11,9 @@ export type ShapeType =
   | 'heart'
   | 'hexagon'
   | 'line'
-  | 'line-arrow';
+  | 'line-arrow'
+  | 'polyline'
+  | 'arc';
 
 export type ElementType = 'shape' | 'brush' | 'text' | 'image';
 
@@ -67,6 +69,14 @@ export interface ShapeElement extends BaseElement {
   strokeWidth: number;
   strokeDash: 'solid' | 'dashed' | 'dotted';
   cornerRadius?: number;
+  /** Relative nodes for polyline / arc start–end (coords relative to element x/y) */
+  points?: Point[];
+  /** Circular arc radius (px, in element local space) */
+  arcRadius?: number;
+  /** SVG large-arc-flag */
+  arcLarge?: boolean;
+  /** SVG sweep-flag (direction) */
+  arcSweep?: boolean;
 }
 
 export interface Point {

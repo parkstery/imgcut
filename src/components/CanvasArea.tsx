@@ -13,11 +13,11 @@ import {
   HandleType,
   ShapeStylePreset,
 } from '../types';
-import { getShapePath } from '../utils/shapeGenerators';
+import { getShapePath, getPolylinePath, finalizePolylineGeometry, getArcPath, computeArcFromChordAndBend, finalizeArcGeometry } from '../utils/shapeGenerators';
 import { generateBrushSmoothPath } from '../utils/svgExport';
 import { sampleColorFromCanvas } from '../utils/rasterExport';
 import { getToolCursor } from '../utils/cursorUtils';
-import { Crop, Scissors, Copy, Clipboard } from 'lucide-react';
+import { Crop, Scissors, Copy } from 'lucide-react';
 
 interface CanvasAreaProps {
   config: CanvasConfig;
@@ -25,7 +25,6 @@ interface CanvasAreaProps {
   onCropCanvas?: (crop: { x: number; y: number; w: number; h: number }) => void;
   onCutCanvasRegion?: (crop: { x: number; y: number; w: number; h: number }) => Promise<void> | void;
   onCopyCanvasRegion?: (crop: { x: number; y: number; w: number; h: number }) => Promise<void> | void;
-  onPasteCanvasRegion?: (crop: { x: number; y: number; w: number; h: number }) => Promise<void> | void;
   onTriggerPaste?: () => void;
   onMouseMoveCanvas?: (pt: Point) => void;
   onCopyImagePart?: (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => void;
@@ -34,7 +33,17 @@ interface CanvasAreaProps {
   layers: Layer[];
   elements: CanvasElement[];
   onAddElement: (element: CanvasElement) => void;
-  onUpdateElement: (updated: CanvasElement) => void;
+  onUpdateElement: (
+    updated: CanvasElement,
+    options?: { skipHistory?: boolean }
+  ) => void;
+  /** Batch-update multiple elements in one state commit (for group move) */
+  onUpdateElements?: (
+    updated: CanvasElement[],
+    options?: { skipHistory?: boolean }
+  ) => void;
+  /** Commit current canvas state to undo history (e.g. after drag ends) */
+  onCommitHistory?: () => void;
   onDeleteElement: (id: string) => void;
   activeLayerId: string;
   selectedElementId: string | null;
@@ -63,7 +72,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   onCropCanvas,
   onCutCanvasRegion,
   onCopyCanvasRegion,
-  onPasteCanvasRegion,
   onTriggerPaste,
   onMouseMoveCanvas,
   onCopyImagePart,
@@ -73,6 +81,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   elements,
   onAddElement,
   onUpdateElement,
+  onUpdateElements,
+  onCommitHistory,
   onDeleteElement,
   activeLayerId,
   selectedElementId,
@@ -111,12 +121,194 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   // Line drawing preview state (start to current)
   const [linePreviewEnd, setLinePreviewEnd] = useState<Point | null>(null);
 
+  // Continuous polyline (node-to-node) drawing draft — absolute canvas coords
+  const [polylineDraft, setPolylineDraft] = useState<Point[] | null>(null);
+  const [polylineCursor, setPolylineCursor] = useState<Point | null>(null);
+  const polylineDraftRef = useRef<Point[] | null>(null);
+
+  // Arc drawing: click start → click end → move to set radius (bend) → click to finish
+  const [arcDraft, setArcDraft] = useState<{
+    start: Point;
+    end: Point | null;
+  } | null>(null);
+  const [arcBend, setArcBend] = useState<Point | null>(null);
+  const arcDraftRef = useRef<{ start: Point; end: Point | null } | null>(null);
+  const arcBendRef = useRef<Point | null>(null);
+
+  useEffect(() => {
+    polylineDraftRef.current = polylineDraft;
+  }, [polylineDraft]);
+
+  useEffect(() => {
+    arcDraftRef.current = arcDraft;
+  }, [arcDraft]);
+
+  useEffect(() => {
+    arcBendRef.current = arcBend;
+  }, [arcBend]);
+
+  // Cancel unfinished polyline / arc when leaving the tool
+  useEffect(() => {
+    if (currentTool !== 'shape' || selectedShapeType !== 'polyline') {
+      polylineDraftRef.current = null;
+      setPolylineDraft(null);
+      setPolylineCursor(null);
+    }
+    if (currentTool !== 'shape' || selectedShapeType !== 'arc') {
+      arcDraftRef.current = null;
+      arcBendRef.current = null;
+      setArcDraft(null);
+      setArcBend(null);
+    }
+  }, [currentTool, selectedShapeType]);
+
+  const finishPolylineDraft = useCallback(() => {
+    const draft = polylineDraftRef.current;
+    polylineDraftRef.current = null;
+    setPolylineDraft(null);
+    setPolylineCursor(null);
+    const layer = layers.find((l) => l.id === activeLayerId) || layers[0];
+    if (!draft || draft.length < 2 || !layer || layer.locked) return;
+
+    const geom = finalizePolylineGeometry(draft);
+    const strokeW =
+      lastShapeStyle.strokeWidth && lastShapeStyle.strokeWidth > 0
+        ? lastShapeStyle.strokeWidth
+        : strokeWidth || 2;
+    const lineStroke =
+      lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+        ? lastShapeStyle.stroke
+        : primaryColor || '#000000';
+
+    const newPoly: ShapeElement = {
+      id: 'shape-polyline-' + Date.now(),
+      layerId: layer.id,
+      name: '연속 선',
+      type: 'shape',
+      shapeType: 'polyline',
+      x: geom.x,
+      y: geom.y,
+      width: Math.max(geom.width, 1),
+      height: Math.max(geom.height, 1),
+      rotation: 0,
+      opacity: lastShapeStyle.opacity ?? 1,
+      fill: 'none',
+      stroke: lineStroke,
+      strokeWidth: strokeW,
+      strokeDash: lastShapeStyle.strokeDash || 'solid',
+      shadow: lastShapeStyle.shadow,
+      points: geom.points,
+    };
+    onAddElement(newPoly);
+    onSelectElement(newPoly.id);
+  }, [
+    layers,
+    activeLayerId,
+    lastShapeStyle,
+    strokeWidth,
+    primaryColor,
+    onAddElement,
+    onSelectElement,
+  ]);
+
+  const cancelPolylineDraft = useCallback(() => {
+    polylineDraftRef.current = null;
+    setPolylineDraft(null);
+    setPolylineCursor(null);
+  }, []);
+
+  const cancelArcDraft = useCallback(() => {
+    arcDraftRef.current = null;
+    arcBendRef.current = null;
+    setArcDraft(null);
+    setArcBend(null);
+  }, []);
+
+  const finishArcDraft = useCallback(() => {
+    const draft = arcDraftRef.current;
+    const bend = arcBendRef.current;
+    arcDraftRef.current = null;
+    arcBendRef.current = null;
+    setArcDraft(null);
+    setArcBend(null);
+
+    const layer = layers.find((l) => l.id === activeLayerId) || layers[0];
+    if (!draft?.start || !draft.end || !bend || !layer || layer.locked) return;
+
+    const computed = computeArcFromChordAndBend(draft.start, draft.end, bend);
+    if (!computed) return;
+
+    const geom = finalizeArcGeometry(
+      draft.start,
+      draft.end,
+      computed.radius,
+      computed.large,
+      computed.sweep
+    );
+    const strokeW =
+      lastShapeStyle.strokeWidth && lastShapeStyle.strokeWidth > 0
+        ? lastShapeStyle.strokeWidth
+        : strokeWidth || 2;
+    const lineStroke =
+      lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+        ? lastShapeStyle.stroke
+        : primaryColor || '#000000';
+
+    const newArc: ShapeElement = {
+      id: 'shape-arc-' + Date.now(),
+      layerId: layer.id,
+      name: '아크',
+      type: 'shape',
+      shapeType: 'arc',
+      x: geom.x,
+      y: geom.y,
+      width: Math.max(geom.width, 1),
+      height: Math.max(geom.height, 1),
+      rotation: 0,
+      opacity: lastShapeStyle.opacity ?? 1,
+      fill: 'none',
+      stroke: lineStroke,
+      strokeWidth: strokeW,
+      strokeDash: lastShapeStyle.strokeDash || 'solid',
+      shadow: lastShapeStyle.shadow,
+      points: geom.points,
+      arcRadius: geom.arcRadius,
+      arcLarge: geom.arcLarge,
+      arcSweep: geom.arcSweep,
+    };
+    onAddElement(newArc);
+    onSelectElement(newArc.id);
+  }, [
+    layers,
+    activeLayerId,
+    lastShapeStyle,
+    strokeWidth,
+    primaryColor,
+    onAddElement,
+    onSelectElement,
+  ]);
+
+  const snapPolylineAngle = useCallback((from: Point, to: Point): Point => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.1) return to;
+    const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const snappedDeg = Math.round(deg / 45) * 45;
+    const rad = (snappedDeg * Math.PI) / 180;
+    return {
+      x: from.x + Math.cos(rad) * dist,
+      y: from.y + Math.sin(rad) * dist,
+    };
+  }, []);
+
   // Marquee selection box state (for multi-selection)
   const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
   const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   // Transform states (Move / Resize / Rotate selected element(s))
   const [isTransforming, setIsTransforming] = useState(false);
+  const transformDirtyRef = useRef(false);
   const [activeHandle, setActiveHandle] = useState<HandleType | 'move' | null>(null);
   const [transformStart, setTransformStart] = useState<{
     clientX: number;
@@ -129,6 +321,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     elementsStartPositions: { id: string; x: number; y: number }[];
     lineStart?: Point;
     lineEnd?: Point;
+    pointsStart?: Point[];
+    arcRadiusStart?: number;
   } | null>(null);
 
   // Canvas crop tool state
@@ -149,6 +343,80 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     clientY: number;
     initialBox: { x: number; y: number; w: number; h: number };
   } | null>(null);
+
+  // Inline text editing
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editingTextSnapshot, setEditingTextSnapshot] = useState<TextElement | null>(null);
+  const textEditRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus textarea when entering text edit mode
+  useEffect(() => {
+    if (!editingTextId || !textEditRef.current) return;
+    const el = textEditRef.current;
+    // Defer focus so the textarea is mounted after state commit
+    const t = requestAnimationFrame(() => {
+      el.focus();
+      if (editDraft) {
+        el.select();
+      }
+    });
+    return () => cancelAnimationFrame(t);
+  }, [editingTextId]);
+
+  const measureTextBox = useCallback((text: string, fontSize: number, minW = 80) => {
+    const lines = text.length > 0 ? text.split('\n') : [''];
+    const longest = Math.max(...lines.map((l) => l.length), 1);
+    const width = Math.max(minW, Math.ceil(longest * fontSize * 0.62) + 12);
+    const height = Math.max(fontSize + 10, Math.ceil(lines.length * fontSize * 1.3) + 8);
+    return { width, height };
+  }, []);
+
+  const beginTextEdit = useCallback(
+    (textEl: TextElement) => {
+      onSelectElement(textEl.id);
+      setEditingTextId(textEl.id);
+      setEditingTextSnapshot(textEl);
+      setEditDraft(textEl.text);
+    },
+    [onSelectElement]
+  );
+
+  const commitTextEdit = useCallback(() => {
+    if (!editingTextId) return;
+    const live = elements.find((el) => el.id === editingTextId && el.type === 'text') as
+      | TextElement
+      | undefined;
+    const textEl = live || editingTextSnapshot;
+    const draft = editDraft;
+    setEditingTextId(null);
+    setEditingTextSnapshot(null);
+
+    if (!textEl) return;
+
+    if (!draft.trim()) {
+      onDeleteElement(textEl.id);
+      onSelectElement(null);
+      return;
+    }
+
+    const { width, height } = measureTextBox(draft, textEl.fontSize, textEl.width);
+    onUpdateElement({
+      ...textEl,
+      text: draft,
+      width: Math.max(textEl.width, width),
+      height: Math.max(textEl.height, height),
+    });
+  }, [
+    editingTextId,
+    editingTextSnapshot,
+    editDraft,
+    elements,
+    measureTextBox,
+    onDeleteElement,
+    onSelectElement,
+    onUpdateElement,
+  ]);
 
   const croppingImage = useMemo(
     () =>
@@ -185,11 +453,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   // Is current tool an element manipulation tool or a drawing tool?
   // When in drawing tool mode (shape, brush, text, crop, pan), elements become transparent to clicks
   // so the user can freely draw shapes/lines on top of images without any blocking or hand-cursor!
+  // Picture-crop mode also disables element hit-testing so outside→inside drags don't select/move.
   const isSelectOrElementTool =
-    currentTool === 'select' ||
-    currentTool === 'eyedropper' ||
-    currentTool === 'fill' ||
-    currentTool === 'eraser';
+    !croppingImageId &&
+    (currentTool === 'select' ||
+      currentTool === 'eyedropper' ||
+      currentTool === 'fill' ||
+      currentTool === 'eraser');
 
   const selectedElement = useMemo(
     () => elements.find((el) => el.id === selectedElementId) || null,
@@ -197,6 +467,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   );
 
   const selectedLineEndpoints = useMemo(() => {
+    // Only show line endpoint handles for a single selection
+    if (selectedElementIds.length !== 1) return null;
     if (!selectedElement || selectedElement.type !== 'shape') return null;
     if (selectedElement.shapeType !== 'line' && selectedElement.shapeType !== 'line-arrow') return null;
     const sx = selectedElement.x;
@@ -205,12 +477,33 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const ex = sx + Math.cos(rad) * selectedElement.width;
     const ey = sy + Math.sin(rad) * selectedElement.width;
     return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
-  }, [selectedElement]);
+  }, [selectedElement, selectedElementIds.length]);
 
   const selectedElements = useMemo(
     () => elements.filter((el) => selectedElementIds.includes(el.id)),
     [elements, selectedElementIds]
   );
+
+  const groupBounds = useMemo(() => {
+    if (selectedElements.length < 2) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    selectedElements.forEach((el) => {
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + el.width);
+      maxY = Math.max(maxY, el.y + el.height);
+    });
+    if (!Number.isFinite(minX)) return null;
+    return {
+      x: minX,
+      y: minY,
+      w: Math.max(1, maxX - minX),
+      h: Math.max(1, maxY - minY),
+    };
+  }, [selectedElements]);
 
   const activeLayer = useMemo(
     () => layers.find((l) => l.id === activeLayerId) || layers[0],
@@ -285,7 +578,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     if (currentTool === 'eyedropper') {
       sampleColorFromCanvas(layers, elements, config, pt.x, pt.y).then((color) => {
         onPrimaryColorChange(color);
-        onSelectTool('select');
       });
       return;
     }
@@ -326,9 +618,72 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    // Shape Drawing Tool (including Line, Rectangle, Circle, etc.)
+    // Shape Drawing Tool (including Line, Rectangle, Circle, Polyline, etc.)
     if (currentTool === 'shape') {
       if (activeLayer.locked) return;
+
+      // Continuous polyline: each click adds a node; double-click / Enter finishes
+      if (selectedShapeType === 'polyline') {
+        let node = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
+        if (polylineDraft && polylineDraft.length > 0 && e.shiftKey) {
+          node = snapPolylineAngle(polylineDraft[polylineDraft.length - 1], node);
+          if (config.snapToGrid) {
+            node = { x: snapValue(node.x), y: snapValue(node.y) };
+          }
+        }
+        setPolylineDraft((prev) => {
+          if (!prev) {
+            const next = [node];
+            polylineDraftRef.current = next;
+            return next;
+          }
+          const last = prev[prev.length - 1];
+          if (Math.hypot(node.x - last.x, node.y - last.y) < 2) return prev;
+          const next = [...prev, node];
+          polylineDraftRef.current = next;
+          return next;
+        });
+        setPolylineCursor(node);
+        return;
+      }
+
+      // Arc: 1st click = start, 2nd = end, 3rd = confirm radius (bend)
+      if (selectedShapeType === 'arc') {
+        let node = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
+        if (!arcDraft) {
+          const next = { start: node, end: null };
+          arcDraftRef.current = next;
+          setArcDraft(next);
+          setArcBend(node);
+          return;
+        }
+        if (!arcDraft.end) {
+          if (Math.hypot(node.x - arcDraft.start.x, node.y - arcDraft.start.y) < 4) return;
+          if (e.shiftKey) {
+            node = snapPolylineAngle(arcDraft.start, node);
+            if (config.snapToGrid) node = { x: snapValue(node.x), y: snapValue(node.y) };
+          }
+          const next = { start: arcDraft.start, end: node };
+          arcDraftRef.current = next;
+          setArcDraft(next);
+          // Seed bend slightly off the chord so preview is visible
+          const mx = (arcDraft.start.x + node.x) / 2;
+          const my = (arcDraft.start.y + node.y) / 2;
+          const dx = node.x - arcDraft.start.x;
+          const dy = node.y - arcDraft.start.y;
+          const L = Math.hypot(dx, dy) || 1;
+          const seed = { x: mx - (dy / L) * Math.max(12, L * 0.15), y: my + (dx / L) * Math.max(12, L * 0.15) };
+          arcBendRef.current = seed;
+          setArcBend(seed);
+          return;
+        }
+        // Third click: set final bend and finish
+        arcBendRef.current = node;
+        setArcBend(node);
+        finishArcDraft();
+        return;
+      }
+
       const startPt = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
       setIsDrawing(true);
       setDrawStart(startPt);
@@ -341,9 +696,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    // Text Creation Tool
+    // Text Creation Tool — place box and open inline editor immediately
     if (currentTool === 'text') {
       if (activeLayer.locked) return;
+      if (editingTextId) {
+        commitTextEdit();
+      }
       const newTextElem: TextElement = {
         id: 'text-' + Date.now(),
         layerId: activeLayer.id,
@@ -355,8 +713,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         height: 48,
         rotation: 0,
         opacity: 1,
-        text: '텍스트 입력',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        text: '',
+        fontFamily: 'system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
         fontSize: 28,
         color: primaryColor,
         bold: false,
@@ -365,12 +723,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         align: 'left',
       };
       onAddElement(newTextElem);
-      onSelectElement(newTextElem.id);
+      beginTextEdit(newTextElem);
       return;
     }
 
     // Select Tool on empty canvas: Start marquee selection box
-    if (currentTool === 'select' && !isTransforming) {
+    // Skip while picture-crop is active — crop overlay owns interaction.
+    if (currentTool === 'select' && !isTransforming && !croppingImageId) {
       if (!e.shiftKey) {
         onSelectElement(null);
       }
@@ -408,7 +767,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       currentTool === 'highlighter' ||
       currentTool === 'text' ||
       currentTool === 'crop' ||
-      currentTool === 'pan'
+      currentTool === 'pan' ||
+      croppingImageId
     ) {
       return;
     }
@@ -420,7 +780,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       const pt = clientToCanvas(e.clientX, e.clientY);
       sampleColorFromCanvas(layers, elements, config, pt.x, pt.y).then((color) => {
         onPrimaryColorChange(color);
-        onSelectTool('select');
       });
       return;
     }
@@ -448,9 +807,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    // Normal 1-click selection:
-    // If the clicked element is already in selectedElementIds, maintain the multi-selection for group dragging
-    if (!selectedElementIds.includes(el.id)) {
+    // Clicking an unselected shape: select only that one (clear previous selection).
+    // Clicking an already-selected shape: keep multi-selection for group drag.
+    const alreadySelected = selectedElementIds.includes(el.id);
+    if (!alreadySelected) {
       onSelectElement(el.id);
     }
 
@@ -458,8 +818,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     if (!activeLayer.locked) {
       setIsTransforming(true);
       setActiveHandle('move');
+      transformDirtyRef.current = false;
+      const idsToMove = alreadySelected ? selectedElementIds : [el.id];
       const startPositions = elements
-        .filter((item) => selectedElementIds.includes(item.id) || item.id === el.id)
+        .filter((item) => idsToMove.includes(item.id))
         .map((item) => ({ id: item.id, x: item.x, y: item.y }));
 
       setTransformStart({
@@ -475,10 +837,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     }
   };
 
-  // Element Double Click: Double-clicking an image enters PowerPoint crop mode!
+  // Element Double Click: image → crop, text → inline edit, polyline draft → finish
   const handleElementDoubleClick = (el: CanvasElement) => {
+    if (polylineDraft) {
+      finishPolylineDraft();
+      return;
+    }
     if (el.type === 'image' && onStartCropImage) {
       onStartCropImage(el.id);
+    } else if (el.type === 'text') {
+      beginTextEdit(el);
     }
   };
 
@@ -597,6 +965,31 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const pt = clientToCanvas(e.clientX, e.clientY);
     setCursorPos(pt);
     onMouseMoveCanvas?.(pt);
+
+    // Continuous polyline rubber-band cursor
+    if (currentTool === 'shape' && selectedShapeType === 'polyline' && polylineDraft) {
+      let cursor = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
+      if (e.shiftKey && polylineDraft.length > 0) {
+        cursor = snapPolylineAngle(polylineDraft[polylineDraft.length - 1], cursor);
+      }
+      setPolylineCursor(cursor);
+      return;
+    }
+
+    // Arc rubber-band: end point or bend (radius) preview
+    if (currentTool === 'shape' && selectedShapeType === 'arc' && arcDraft) {
+      let cursor = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
+      if (!arcDraft.end && e.shiftKey) {
+        cursor = snapPolylineAngle(arcDraft.start, cursor);
+      }
+      if (arcDraft.end) {
+        arcBendRef.current = cursor;
+        setArcBend(cursor);
+      } else {
+        setArcBend(cursor);
+      }
+      return;
+    }
 
     // Panning canvas
     if (isPanning) {
@@ -728,6 +1121,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     if (isTransforming && transformStart && selectedElement) {
       const dx = (e.clientX - transformStart.clientX) / zoom;
       const dy = (e.clientY - transformStart.clientY) / zoom;
+      const liveOpts = { skipHistory: true } as const;
+      transformDirtyRef.current = true;
 
       // Specialized Line Start Point handle drag
       if (activeHandle === 'line-start' && transformStart.lineEnd) {
@@ -761,7 +1156,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           y: Math.round(curPt.y - thickness / 2),
           width: Math.max(5, Math.round(len)),
           rotation: Math.round(deg),
-        });
+        }, liveOpts);
         return;
       }
 
@@ -793,29 +1188,49 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           ...selectedElement,
           width: Math.max(5, Math.round(len)),
           rotation: Math.round(deg),
-        });
+        }, liveOpts);
         return;
       }
 
       if (activeHandle === 'move') {
-        // Group move if multiple selected
+        // Shift: constrain to horizontal or vertical axis only (straight-line move)
+        let moveDx = dx;
+        let moveDy = dy;
+        if (e.shiftKey) {
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            moveDy = 0;
+          } else {
+            moveDx = 0;
+          }
+        }
+
+        // Group move: apply all position updates in one batch (avoids stale-state overwrite)
         if (transformStart.elementsStartPositions && transformStart.elementsStartPositions.length > 1) {
+          // Snap shared delta once so relative layout stays intact
+          let groupDx = moveDx;
+          let groupDy = moveDy;
+          if (config.snapToGrid) {
+            const first = transformStart.elementsStartPositions[0];
+            groupDx = snapValue(first.x + moveDx) - first.x;
+            groupDy = snapValue(first.y + moveDy) - first.y;
+          }
+          const updates: CanvasElement[] = [];
           transformStart.elementsStartPositions.forEach((pos) => {
             const el = elements.find((item) => item.id === pos.id);
-            if (el) {
-              let nx = pos.x + dx;
-              let ny = pos.y + dy;
-              if (config.snapToGrid) {
-                nx = snapValue(nx);
-                ny = snapValue(ny);
-              }
-              onUpdateElement({ ...el, x: nx, y: ny });
-            }
+            if (!el) return;
+            updates.push({ ...el, x: pos.x + groupDx, y: pos.y + groupDy });
           });
+          if (updates.length > 0) {
+            if (onUpdateElements) {
+              onUpdateElements(updates, liveOpts);
+            } else {
+              updates.forEach((u) => onUpdateElement(u, liveOpts));
+            }
+          }
         } else {
           // Single move
-          let newX = transformStart.elemX + dx;
-          let newY = transformStart.elemY + dy;
+          let newX = transformStart.elemX + moveDx;
+          let newY = transformStart.elemY + moveDy;
           if (config.snapToGrid) {
             newX = snapValue(newX);
             newY = snapValue(newY);
@@ -824,7 +1239,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             ...selectedElement,
             x: newX,
             y: newY,
-          });
+          }, liveOpts);
         }
       } else if (activeHandle === 'rotate') {
         // Calculate angle between center and current mouse
@@ -839,7 +1254,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         onUpdateElement({
           ...selectedElement,
           rotation: deg % 360,
-        });
+        }, liveOpts);
       } else if (activeHandle) {
         // 8-point resize logic
         let { elemX: newX, elemY: newY, elemW: newW, elemH: newH } = transformStart;
@@ -887,7 +1302,25 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           y: newY,
           width: Math.max(10, newW),
           height: Math.max(10, newH),
-        });
+          ...(transformStart.pointsStart
+            ? {
+                points: transformStart.pointsStart.map((p) => ({
+                  x: (p.x / Math.max(transformStart.elemW, 1)) * Math.max(10, newW),
+                  y: (p.y / Math.max(transformStart.elemH, 1)) * Math.max(10, newH),
+                })),
+              }
+            : {}),
+          ...(transformStart.arcRadiusStart != null
+            ? {
+                arcRadius:
+                  transformStart.arcRadiusStart *
+                  Math.max(
+                    Math.max(10, newW) / Math.max(transformStart.elemW, 1),
+                    Math.max(10, newH) / Math.max(transformStart.elemH, 1)
+                  ),
+              }
+            : {}),
+        }, liveOpts);
       }
     }
   };
@@ -1011,7 +1444,15 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     }
 
     // Finish Regular Shape creation (Inheriting lastShapeStyle for persistent styles)
-    if (isDrawing && currentTool === 'shape' && previewRect && selectedShapeType !== 'line' && selectedShapeType !== 'line-arrow') {
+    if (
+      isDrawing &&
+      currentTool === 'shape' &&
+      previewRect &&
+      selectedShapeType !== 'line' &&
+      selectedShapeType !== 'line-arrow' &&
+      selectedShapeType !== 'polyline' &&
+      selectedShapeType !== 'arc'
+    ) {
       if (previewRect.w >= 5 && previewRect.h >= 5) {
         const newShape: ShapeElement = {
           id: 'shape-' + Date.now(),
@@ -1026,8 +1467,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           rotation: 0,
           opacity: lastShapeStyle.opacity ?? 1,
           fill: lastShapeStyle.fill || primaryColor,
-          gradient: lastShapeStyle.gradient,
-          stroke: lastShapeStyle.stroke || '#000000',
+          gradient: lastShapeStyle.gradient?.enabled ? lastShapeStyle.gradient : undefined,
+          stroke:
+            lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+              ? lastShapeStyle.stroke
+              : primaryColor || '#000000',
           strokeWidth: lastShapeStyle.strokeWidth ?? (strokeWidth > 0 ? strokeWidth : 2),
           strokeDash: lastShapeStyle.strokeDash || 'solid',
           cornerRadius: lastShapeStyle.cornerRadius ?? 16,
@@ -1046,8 +1490,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       setIsDrawing(false);
     }
 
-    // Finish element transform
+    // Finish element transform — one undo step for the whole drag
     if (isTransforming) {
+      if (transformDirtyRef.current) {
+        onCommitHistory?.();
+        transformDirtyRef.current = false;
+      }
       setIsTransforming(false);
       setActiveHandle(null);
       setTransformStart(null);
@@ -1075,6 +1523,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       case 'hexagon': return '육각형';
       case 'line': return '직선';
       case 'line-arrow': return '화살표 선';
+      case 'polyline': return '연속 선';
+      case 'arc': return '아크';
     }
   };
 
@@ -1106,9 +1556,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     if (onCutCanvasRegion) {
       await onCutCanvasRegion(cropBox);
       setCropBox(null);
-      onSelectTool('select');
     }
-  }, [cropBox, onCutCanvasRegion, onSelectTool]);
+  }, [cropBox, onCutCanvasRegion]);
 
   // Copy Canvas Crop Region (Ctrl+C)
   const handleCopyCrop = useCallback(async () => {
@@ -1120,24 +1569,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       await onCopyCanvasRegion(cropBox);
     }
   }, [cropBox, onCopyCanvasRegion]);
-
-  // Paste Canvas Crop Region into canvas as a new image element (Ctrl+V)
-  const handlePasteCropDirectly = useCallback(async () => {
-    if (!cropBox || cropBox.w < 5 || cropBox.h < 5) return;
-    setIsCropFlashing(true);
-    setTimeout(() => setIsCropFlashing(false), 300);
-
-    if (onPasteCanvasRegion) {
-      await onPasteCanvasRegion(cropBox);
-      setCropBox(null);
-      onSelectTool('select');
-    } else if (onCopyCanvasRegion) {
-      await onCopyCanvasRegion(cropBox);
-      onTriggerPaste?.();
-      setCropBox(null);
-      onSelectTool('select');
-    }
-  }, [cropBox, onPasteCanvasRegion, onCopyCanvasRegion, onTriggerPaste, onSelectTool]);
 
   // Apply Crop (Canvas Resize)
   const applyCrop = useCallback(() => {
@@ -1161,8 +1592,76 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       });
     }
     setCropBox(null);
-    onSelectTool('select');
-  }, [cropBox, onCropCanvas, onUpdateConfig, elements, onUpdateElement, onSelectTool]);
+  }, [cropBox, onCropCanvas, onUpdateConfig, elements, onUpdateElement]);
+
+  // Keyboard: finish / cancel continuous polyline
+  useEffect(() => {
+    if (!polylineDraft) return;
+    const handlePolyKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        finishPolylineDraft();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelPolylineDraft();
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPolylineDraft((prev) => {
+          if (!prev || prev.length <= 1) {
+            polylineDraftRef.current = null;
+            setPolylineCursor(null);
+            return null;
+          }
+          const next = prev.slice(0, -1);
+          polylineDraftRef.current = next;
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handlePolyKey, true);
+    return () => window.removeEventListener('keydown', handlePolyKey, true);
+  }, [polylineDraft, finishPolylineDraft, cancelPolylineDraft]);
+
+  // Keyboard: finish / cancel arc
+  useEffect(() => {
+    if (!arcDraft) return;
+    const handleArcKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'Enter' && arcDraft.end && arcBendRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        finishArcDraft();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelArcDraft();
+      }
+    };
+    window.addEventListener('keydown', handleArcKey, true);
+    return () => window.removeEventListener('keydown', handleArcKey, true);
+  }, [arcDraft, finishArcDraft, cancelArcDraft]);
 
   // Keyboard shortcuts for Canvas Crop:
   // Ctrl+X: Cut dragged region
@@ -1193,7 +1692,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         e.stopPropagation();
         onTriggerPaste?.();
         setCropBox(null);
-        onSelectTool('select');
         return;
       }
       if (e.key === 'Enter') {
@@ -1202,7 +1700,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setCropBox(null);
-        onSelectTool('select');
       }
     };
     window.addEventListener('keydown', handleCropKeyDown);
@@ -1215,6 +1712,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     if (!selectedElement || activeLayer.locked) return;
     setIsTransforming(true);
     setActiveHandle(handle);
+    transformDirtyRef.current = false;
     const startPositions = selectedElements.map((item) => ({ id: item.id, x: item.x, y: item.y }));
 
     let lineStart: Point | undefined;
@@ -1243,6 +1741,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       elementsStartPositions: startPositions,
       lineStart,
       lineEnd,
+      pointsStart:
+        selectedElement.type === 'shape' &&
+        (selectedElement.shapeType === 'polyline' || selectedElement.shapeType === 'arc') &&
+        selectedElement.points
+          ? selectedElement.points.map((p) => ({ ...p }))
+          : undefined,
+      arcRadiusStart:
+        selectedElement.type === 'shape' && selectedElement.shapeType === 'arc'
+          ? selectedElement.arcRadius
+          : undefined,
     });
   };
 
@@ -1272,6 +1780,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onDoubleClick={(e) => {
+        if (currentTool === 'shape' && selectedShapeType === 'polyline' && polylineDraft) {
+          e.preventDefault();
+          finishPolylineDraft();
+        }
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
@@ -1384,7 +1898,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
         {/* Grid lines overlay */}
         {config.showGrid && (
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20">
+          <svg className="absolute inset-0 w-full h-full pointer-events-none">
             <defs>
               <pattern
                 id="grid-pattern"
@@ -1395,12 +1909,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 <path
                   d={`M ${config.gridSize} 0 L 0 0 0 ${config.gridSize}`}
                   fill="none"
-                  stroke="#78716c"
+                  stroke="#A8A29E"
                   strokeWidth="1"
                 />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#grid-pattern)" />
+            <rect width="100%" height="100%" fill="url(#grid-pattern)" opacity="0.85" />
           </svg>
         )}
 
@@ -1523,6 +2037,33 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                               pointerEvents={isSelectOrElementTool ? 'all' : 'none'}
                               className={currentTool === 'select' ? 'cursor-pointer' : ''}
                             />
+                          ) : el.shapeType === 'polyline' && el.points && el.points.length >= 2 ? (
+                            <path
+                              d={getPolylinePath(el.points)}
+                              fill="none"
+                              stroke="transparent"
+                              strokeWidth={Math.max(el.strokeWidth, 24)}
+                              pointerEvents={isSelectOrElementTool ? 'all' : 'none'}
+                              className={currentTool === 'select' ? 'cursor-pointer' : ''}
+                            />
+                          ) : el.shapeType === 'arc' &&
+                            el.points &&
+                            el.points.length >= 2 &&
+                            el.arcRadius != null ? (
+                            <path
+                              d={getArcPath(
+                                el.points[0],
+                                el.points[1],
+                                el.arcRadius,
+                                !!el.arcLarge,
+                                !!el.arcSweep
+                              )}
+                              fill="none"
+                              stroke="transparent"
+                              strokeWidth={Math.max(el.strokeWidth, 24)}
+                              pointerEvents={isSelectOrElementTool ? 'all' : 'none'}
+                              className={currentTool === 'select' ? 'cursor-pointer' : ''}
+                            />
                           ) : (
                             <path
                               d={getShapePath(el.shapeType, el.width, el.height, el.cornerRadius)}
@@ -1536,9 +2077,27 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
                           {/* Visual Visible Shape Path */}
                           <path
-                            d={getShapePath(el.shapeType, el.width, el.height, el.cornerRadius)}
+                            d={
+                              el.shapeType === 'polyline' && el.points && el.points.length >= 2
+                                ? getPolylinePath(el.points)
+                                : el.shapeType === 'arc' &&
+                                  el.points &&
+                                  el.points.length >= 2 &&
+                                  el.arcRadius != null
+                                ? getArcPath(
+                                    el.points[0],
+                                    el.points[1],
+                                    el.arcRadius,
+                                    !!el.arcLarge,
+                                    !!el.arcSweep
+                                  )
+                                : getShapePath(el.shapeType, el.width, el.height, el.cornerRadius)
+                            }
                             fill={
-                              el.shapeType === 'line' || el.shapeType === 'line-arrow'
+                              el.shapeType === 'line' ||
+                              el.shapeType === 'line-arrow' ||
+                              el.shapeType === 'polyline' ||
+                              el.shapeType === 'arc'
                                 ? 'none'
                                 : el.gradient?.enabled
                                 ? `url(#grad-${el.id})`
@@ -1546,8 +2105,22 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                             }
                             stroke={el.stroke}
                             strokeWidth={el.strokeWidth}
-                            strokeLinecap={el.shapeType === 'line' || el.shapeType === 'line-arrow' ? 'round' : undefined}
-                            strokeLinejoin={el.shapeType === 'line' || el.shapeType === 'line-arrow' ? 'round' : undefined}
+                            strokeLinecap={
+                              el.shapeType === 'line' ||
+                              el.shapeType === 'line-arrow' ||
+                              el.shapeType === 'polyline' ||
+                              el.shapeType === 'arc'
+                                ? 'round'
+                                : undefined
+                            }
+                            strokeLinejoin={
+                              el.shapeType === 'line' ||
+                              el.shapeType === 'line-arrow' ||
+                              el.shapeType === 'polyline' ||
+                              el.shapeType === 'arc'
+                                ? 'round'
+                                : undefined
+                            }
                             strokeDasharray={
                               el.strokeDash === 'dashed'
                                 ? '8 6'
@@ -1589,7 +2162,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       )}
 
                       {/* TEXT ELEMENT */}
-                      {el.type === 'text' && (
+                      {el.type === 'text' && el.id !== editingTextId && (
                         <g
                           transform={
                             rot !== 0
@@ -1633,7 +2206,21 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                             filter={filterAttr}
                             pointerEvents="none"
                           >
-                            {el.text}
+                            {el.text.split('\n').map((line, i) => (
+                              <tspan
+                                key={i}
+                                x={
+                                  el.align === 'center'
+                                    ? el.x + el.width / 2
+                                    : el.align === 'right'
+                                    ? el.x + el.width
+                                    : el.x
+                                }
+                                dy={i === 0 ? 0 : el.fontSize * 1.3}
+                              >
+                                {line.length === 0 ? '\u00A0' : line}
+                              </tspan>
+                            ))}
                           </text>
                         </g>
                       )}
@@ -1780,8 +2367,151 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             );
           })()}
 
+          {/* Continuous Polyline Draft Preview */}
+          {polylineDraft && polylineDraft.length > 0 && (() => {
+            const stroke =
+              lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+                ? lastShapeStyle.stroke
+                : primaryColor || '#000000';
+            const sw =
+              lastShapeStyle.strokeWidth && lastShapeStyle.strokeWidth > 0
+                ? lastShapeStyle.strokeWidth
+                : strokeWidth || 2;
+            const previewPts =
+              polylineCursor && polylineDraft.length > 0
+                ? [...polylineDraft, polylineCursor]
+                : polylineDraft;
+            return (
+              <g className="pointer-events-none">
+                <path
+                  d={getPolylinePath(previewPts)}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={sw}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="6 4"
+                  opacity={0.9}
+                />
+                {polylineDraft.map((p, i) => (
+                  <circle
+                    key={i}
+                    cx={p.x}
+                    cy={p.y}
+                    r={4}
+                    fill="#F59E0B"
+                    stroke="#000000"
+                    strokeWidth={1}
+                  />
+                ))}
+                {polylineCursor && (
+                  <circle
+                    cx={polylineCursor.x}
+                    cy={polylineCursor.y}
+                    r={3.5}
+                    fill="#FBBF24"
+                    stroke="#000000"
+                    strokeWidth={1}
+                  />
+                )}
+              </g>
+            );
+          })()}
+
+          {/* Arc Draft Preview */}
+          {arcDraft && (() => {
+            const stroke =
+              lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+                ? lastShapeStyle.stroke
+                : primaryColor || '#000000';
+            const sw =
+              lastShapeStyle.strokeWidth && lastShapeStyle.strokeWidth > 0
+                ? lastShapeStyle.strokeWidth
+                : strokeWidth || 2;
+            const endPt = arcDraft.end || arcBend;
+            const computed =
+              arcDraft.end && arcBend
+                ? computeArcFromChordAndBend(arcDraft.start, arcDraft.end, arcBend)
+                : null;
+            return (
+              <g className="pointer-events-none">
+                {endPt && (
+                  <line
+                    x1={arcDraft.start.x}
+                    y1={arcDraft.start.y}
+                    x2={endPt.x}
+                    y2={endPt.y}
+                    stroke="#78716c"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                    opacity={0.7}
+                  />
+                )}
+                {computed && (
+                  <>
+                    <path
+                      d={getArcPath(
+                        arcDraft.start,
+                        arcDraft.end!,
+                        computed.radius,
+                        computed.large,
+                        computed.sweep
+                      )}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={sw}
+                      strokeLinecap="round"
+                      strokeDasharray="6 4"
+                      opacity={0.95}
+                    />
+                    <circle
+                      cx={computed.apex.x}
+                      cy={computed.apex.y}
+                      r={3.5}
+                      fill="#FBBF24"
+                      stroke="#000"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={computed.apex.x + 8}
+                      y={computed.apex.y - 8}
+                      fill="#FBBF24"
+                      fontSize={11}
+                      fontFamily="ui-monospace, monospace"
+                    >
+                      R {Math.round(computed.radius)}
+                    </text>
+                  </>
+                )}
+                <circle
+                  cx={arcDraft.start.x}
+                  cy={arcDraft.start.y}
+                  r={4}
+                  fill="#F59E0B"
+                  stroke="#000"
+                  strokeWidth={1}
+                />
+                {arcDraft.end && (
+                  <circle
+                    cx={arcDraft.end.x}
+                    cy={arcDraft.end.y}
+                    r={4}
+                    fill="#F59E0B"
+                    stroke="#000"
+                    strokeWidth={1}
+                  />
+                )}
+              </g>
+            );
+          })()}
+
           {/* Active Shape Live Drawing Preview (for non-line shapes) */}
-          {isDrawing && previewRect && selectedShapeType !== 'line' && selectedShapeType !== 'line-arrow' && (
+          {isDrawing &&
+            previewRect &&
+            selectedShapeType !== 'line' &&
+            selectedShapeType !== 'line-arrow' &&
+            selectedShapeType !== 'polyline' &&
+            selectedShapeType !== 'arc' && (
             <g transform={`translate(${previewRect.x}, ${previewRect.y})`}>
               <path
                 d={getShapePath(selectedShapeType, previewRect.w, previewRect.h)}
@@ -1810,7 +2540,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         )}
 
         {/* Selected LINE Endpoint Handles & Move Overlay (PowerPoint Style) */}
-        {currentTool === 'select' && selectedLineEndpoints && selectedElement && !activeLayer.locked && (
+        {currentTool === 'select' && !croppingImageId && selectedLineEndpoints && selectedElement && !activeLayer.locked && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <svg className="w-full h-full absolute inset-0 overflow-visible pointer-events-none">
               {/* Move hitbox along the entire line */}
@@ -1861,8 +2591,34 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           </div>
         )}
 
+        {/* Multi-select group bounds: move all selected shapes together */}
+        {currentTool === 'select' && !croppingImageId && groupBounds && selectedElements.length > 1 && !activeLayer.locked && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${groupBounds.x}px`,
+              top: `${groupBounds.y}px`,
+              width: `${groupBounds.w}px`,
+              height: `${groupBounds.h}px`,
+            }}
+            className="pointer-events-none border border-dashed border-amber-500 ring-1 ring-amber-500/40 z-20"
+          >
+            <div
+              onMouseDown={(e) => startTransform('move', e)}
+              className="absolute inset-0 cursor-move pointer-events-auto bg-amber-500/5"
+              title="선택된 도형 일괄 이동 (Shift+드래그: 수평/수직만)"
+            />
+          </div>
+        )}
+
         {/* Selected Non-Line Element Interactive Transform Box (PowerPoint Style Handles) */}
-        {currentTool === 'select' && !selectedLineEndpoints && selectedElement && !activeLayer.locked && selectedElement.id !== croppingImageId && (
+        {currentTool === 'select' &&
+          !croppingImageId &&
+          selectedElementIds.length === 1 &&
+          !selectedLineEndpoints &&
+          selectedElement &&
+          !activeLayer.locked &&
+          selectedElement.id !== editingTextId && (
           <div
             style={{
               position: 'absolute',
@@ -1879,7 +2635,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             <div
               onMouseDown={(e) => startTransform('move', e)}
               className="absolute inset-0 cursor-move pointer-events-auto bg-amber-500/5"
-              title="드래그하여 이동 (Shift+클릭으로 다중 선택)"
+              title="드래그하여 이동 (Shift+드래그: 수평/수직만, Shift+클릭: 다중 선택)"
             />
 
             {/* Rotation handle and line */}
@@ -1912,6 +2668,56 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             ))}
           </div>
         )}
+
+        {/* Inline Text Editor Overlay */}
+        {editingTextId &&
+          (() => {
+            const textEl = elements.find((el) => el.id === editingTextId && el.type === 'text') as
+              | TextElement
+              | undefined;
+            if (!textEl) return null;
+            const draftSize = measureTextBox(editDraft || ' ', textEl.fontSize, textEl.width);
+            const boxW = Math.max(textEl.width, draftSize.width);
+            const boxH = Math.max(textEl.height, draftSize.height);
+            return (
+              <textarea
+                ref={textEditRef}
+                value={editDraft}
+                placeholder="텍스트 입력"
+                onChange={(e) => setEditDraft(e.target.value)}
+                onBlur={() => commitTextEdit()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    commitTextEdit();
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  left: `${textEl.x}px`,
+                  top: `${textEl.y}px`,
+                  width: `${boxW}px`,
+                  height: `${boxH}px`,
+                  fontFamily: textEl.fontFamily,
+                  fontSize: `${textEl.fontSize}px`,
+                  fontWeight: textEl.bold ? 'bold' : 'normal',
+                  fontStyle: textEl.italic ? 'italic' : 'normal',
+                  textDecoration: textEl.underline ? 'underline' : 'none',
+                  color: textEl.color,
+                  textAlign: textEl.align,
+                  lineHeight: 1.3,
+                  transform: `rotate(${textEl.rotation || 0}deg)`,
+                  transformOrigin: 'center center',
+                  opacity: textEl.opacity,
+                }}
+                className="z-40 resize-none overflow-hidden bg-white/95 border-2 border-amber-500 rounded-sm outline-none shadow-lg p-0.5 m-0 select-text caret-amber-600"
+                spellCheck={false}
+              />
+            );
+          })()}
 
         {/* PowerPoint-style Image Cropping Overlay */}
         {croppingImage && croppingImageId === croppingImage.id && (
@@ -2147,7 +2953,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           </div>
         )}
 
-        {/* Crop Box Overlay with Cut / Copy / Paste Floating Bar */}
+        {/* Crop Box Overlay */}
         {cropBox && (
           <div
             style={{
@@ -2167,80 +2973,28 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-amber-400 rounded-sm border border-stone-900 shadow-sm" />
             <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-amber-400 rounded-sm border border-stone-900 shadow-sm" />
             <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-amber-400 rounded-sm border border-stone-900 shadow-sm" />
-
-            {/* Dimension Badge */}
-            <div className="absolute -top-7 left-0 bg-stone-950/90 text-amber-300 font-mono text-[11px] px-2 py-0.5 rounded shadow border border-amber-500/40 pointer-events-none flex items-center space-x-1.5">
-              <span className="font-bold">{Math.round(cropBox.w)} × {Math.round(cropBox.h)} px</span>
-            </div>
-
-            {/* Floating Action Buttons */}
-            <div className="absolute -bottom-10 left-0 flex items-center flex-wrap gap-1 pointer-events-auto bg-stone-950/95 backdrop-blur-md px-2 py-1.5 rounded-lg border border-stone-700/80 shadow-2xl z-40 w-max max-w-full">
-              {/* Cut (Ctrl+X) */}
-              <button
-                type="button"
-                onClick={handleCutCrop}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded transition-all shadow flex items-center space-x-1 active:scale-95 cursor-pointer"
-                title="선택한 영역을 오려내어 클립보드에 저장합니다 (Ctrl+X)"
-              >
-                <Scissors className="w-3.5 h-3.5" />
-                <span>오리기</span>
-                <span className="text-[10px] bg-rose-700 text-rose-100 font-mono px-1 rounded">Ctrl+X</span>
-              </button>
-
-              {/* Copy (Ctrl+C) */}
-              <button
-                type="button"
-                onClick={handleCopyCrop}
-                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded transition-all shadow flex items-center space-x-1 active:scale-95 cursor-pointer"
-                title="선택한 영역을 이미지로 클립보드에 복사합니다 (Ctrl+C)"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>복사</span>
-                <span className="text-[10px] bg-amber-600/80 text-white font-mono px-1 rounded">Ctrl+C</span>
-              </button>
-
-              {/* Paste (Ctrl+V) */}
-              <button
-                type="button"
-                onClick={handlePasteCropDirectly}
-                className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded transition-colors flex items-center space-x-1 active:scale-95 cursor-pointer shadow"
-                title="복사/오려낸 영역을 캔버스에 붙여넣습니다 (Ctrl+V)"
-              >
-                <Clipboard className="w-3.5 h-3.5" />
-                <span>붙여넣기</span>
-                <span className="text-[10px] bg-sky-700 text-sky-100 font-mono px-1 rounded">Ctrl+V</span>
-              </button>
-
-              {/* Resize Canvas Crop */}
-              <button
-                type="button"
-                onClick={applyCrop}
-                className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs rounded transition-colors flex items-center space-x-1 cursor-pointer"
-                title="캔버스 크기를 이 영역으로 자릅니다 (Enter)"
-              >
-                <span>자르기</span>
-                <span className="text-[10px] text-stone-400 font-mono">Enter</span>
-              </button>
-
-              {/* Cancel */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCropBox(null);
-                  onSelectTool('select');
-                }}
-                className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-xs rounded transition-colors cursor-pointer"
-                title="취소 (Esc)"
-              >
-                취소 (Esc)
-              </button>
-            </div>
           </div>
         )}
       </div>
 
       {/* Bottom Status Info Bar */}
       <div className="absolute bottom-2 right-4 bg-stone-900/90 backdrop-blur border border-stone-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-stone-400 flex items-center space-x-4 pointer-events-none z-10 shadow-lg">
+        {cropBox && cropBox.w >= 1 && cropBox.h >= 1 && (
+          <div>
+            크롭:{' '}
+            <span className="text-amber-400 font-semibold">
+              {Math.round(cropBox.w)} × {Math.round(cropBox.h)} px
+            </span>
+          </div>
+        )}
+        {croppingImage && imgCropBox.w >= 1 && imgCropBox.h >= 1 && !cropBox && (
+          <div>
+            크롭:{' '}
+            <span className="text-amber-400 font-semibold">
+              {Math.round(imgCropBox.w)} × {Math.round(imgCropBox.h)} px
+            </span>
+          </div>
+        )}
         <div>
           캔버스: <span className="text-stone-200">{config.width} × {config.height} px</span>
         </div>

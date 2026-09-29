@@ -26,7 +26,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [format, setFormat] = useState<'svg' | 'png' | 'jpeg'>('svg');
   const [scale, setScale] = useState<number>(1);
   const [transparent, setTransparent] = useState<boolean>(false);
-  const [filename, setFilename] = useState<string>('vector-studio-drawing');
+  const [filename, setFilename] = useState<string>('imgman-drawing');
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 

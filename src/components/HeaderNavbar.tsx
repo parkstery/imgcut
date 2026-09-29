@@ -101,62 +101,62 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
       <div className="flex items-center space-x-2">
         <div className="flex items-center space-x-2 mr-3 pr-3 border-r border-stone-800">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center shadow-sm">
-            <span className="font-bold text-white text-sm tracking-tighter">VI</span>
+            <span className="font-bold text-white text-sm tracking-tighter">IM</span>
           </div>
           <div>
-            <h1 className="font-semibold text-sm text-stone-100 leading-tight">Vector & Image Studio</h1>
-            <p className="text-[11px] text-stone-400">Paint & PPT Studio</p>
+            <h1 className="font-semibold text-sm text-stone-100 leading-tight">imgman</h1>
+            <p className="text-[11px] text-stone-400">Image & Vector Studio</p>
           </div>
         </div>
 
         <button
           id="btn-new-canvas"
           onClick={onOpenNewCanvas}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
-          title="새 캔버스 생성"
+          className="p-2 rounded-md text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
+          title="새로 만들기"
+          aria-label="새로 만들기"
         >
-          <FilePlus2 className="w-3.5 h-3.5 text-stone-400" />
-          <span>새로 만들기</span>
+          <FilePlus2 className="w-5 h-5" />
         </button>
 
         <button
           id="btn-open-project"
           onClick={() => projectInputRef.current?.click()}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
+          className="p-2 rounded-md text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
           title="프로젝트 열기 (.json)"
+          aria-label="프로젝트 열기"
         >
-          <FolderOpen className="w-3.5 h-3.5 text-stone-400" />
-          <span>프로젝트 열기</span>
+          <FolderOpen className="w-5 h-5" />
         </button>
 
         <button
           id="btn-save-project"
           onClick={onSaveProject}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
-          title="프로젝트 저장 (.json)"
+          className="p-2 rounded-md text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
+          title="저장 (.json)"
+          aria-label="저장"
         >
-          <Save className="w-3.5 h-3.5 text-stone-400" />
-          <span>저장</span>
+          <Save className="w-5 h-5" />
         </button>
 
         <button
           id="btn-insert-image"
           onClick={() => imageInputRef.current?.click()}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-stone-300 hover:text-white hover:bg-stone-800 transition-colors"
-          title="이미지 파일 삽입 (.png, .jpg 등)"
+          className="p-2 rounded-md text-emerald-400 hover:text-emerald-300 hover:bg-stone-800 transition-colors"
+          title="이미지 삽입 (.png, .jpg 등)"
+          aria-label="이미지 삽입"
         >
-          <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
-          <span>이미지 삽입</span>
+          <ImageIcon className="w-5 h-5" />
         </button>
 
         <button
           id="btn-clipboard-paste"
           onClick={onPasteFromClipboard}
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-medium text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-colors"
-          title="클립보드 이미지 붙여넣기 (또는 캔버스 클릭 후 Ctrl+V)"
+          className="p-2 rounded-md text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-colors"
+          title="클립보드 붙여넣기 (Ctrl+V)"
+          aria-label="클립보드 붙여넣기"
         >
-          <ClipboardPaste className="w-3.5 h-3.5 text-amber-400" />
-          <span>클립보드 붙여넣기</span>
+          <ClipboardPaste className="w-5 h-5" />
         </button>
       </div>
 
@@ -294,11 +294,11 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
         <button
           id="btn-open-export"
           onClick={onOpenExport}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm transition-all hover:shadow"
-          title="벡터(SVG) 및 이미지(PNG/JPG) 내보내기"
+          className="p-2 rounded-md bg-amber-600 hover:bg-amber-500 text-white shadow-sm transition-all hover:shadow"
+          title="내보내기 (SVG / PNG / JPG)"
+          aria-label="내보내기"
         >
-          <Download className="w-3.5 h-3.5" />
-          <span>내보내기 (Export)</span>
+          <Download className="w-5 h-5" />
         </button>
       </div>
     </header>

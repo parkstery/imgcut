@@ -1,5 +1,5 @@
 import { CanvasConfig, CanvasElement, Layer } from '../types';
-import { getShapePath } from './shapeGenerators';
+import { getShapePath, getPolylinePath, getArcPath } from './shapeGenerators';
 
 export function generateSVGString(
   layers: Layer[],
@@ -68,8 +68,26 @@ export function generateSVGString(
 
       switch (el.type) {
         case 'shape': {
-          const isLine = el.shapeType === 'line' || el.shapeType === 'line-arrow';
-          const pathD = getShapePath(el.shapeType, el.width, el.height, el.cornerRadius);
+          const isLine =
+            el.shapeType === 'line' ||
+            el.shapeType === 'line-arrow' ||
+            el.shapeType === 'polyline' ||
+            el.shapeType === 'arc';
+          const pathD =
+            el.shapeType === 'polyline' && el.points && el.points.length >= 2
+              ? getPolylinePath(el.points)
+              : el.shapeType === 'arc' &&
+                el.points &&
+                el.points.length >= 2 &&
+                el.arcRadius != null
+              ? getArcPath(
+                  el.points[0],
+                  el.points[1],
+                  el.arcRadius,
+                  !!el.arcLarge,
+                  !!el.arcSweep
+                )
+              : getShapePath(el.shapeType, el.width, el.height, el.cornerRadius);
           let fillAttr = isLine ? 'none' : el.fill;
           if (!isLine && el.gradient?.enabled) {
             fillAttr = `url(#grad-${el.id})`;
@@ -78,7 +96,10 @@ export function generateSVGString(
           if (el.strokeDash === 'dashed') dashAttr = 'stroke-dasharray="8 6"';
           if (el.strokeDash === 'dotted') dashAttr = 'stroke-dasharray="3 4"';
 
-          const rotOrigin = isLine ? `0 ${el.height / 2}` : `${el.width / 2} ${el.height / 2}`;
+          const rotOrigin =
+            el.shapeType === 'line' || el.shapeType === 'line-arrow'
+              ? `0 ${el.height / 2}`
+              : `${el.width / 2} ${el.height / 2}`;
           const rotAttr = rot !== 0 ? `transform="rotate(${rot} ${rotOrigin})"` : '';
           const lineCaps = isLine ? 'stroke-linecap="round" stroke-linejoin="round"' : '';
 
@@ -115,7 +136,12 @@ export function generateSVGString(
           const textDeco = el.underline ? 'underline' : 'none';
 
           content += `    <text x="${textX}" y="${el.y + el.fontSize}" font-family="${encodeXML(el.fontFamily)}" font-size="${el.fontSize}" font-style="${fontStyle}" font-weight="${fontWeight}" text-decoration="${textDeco}" fill="${el.color}" text-anchor="${textAnchor}" opacity="${el.opacity}" ${transform} ${filterAttr}>\n`;
-          content += `      ${encodeXML(el.text)}\n`;
+          const lines = el.text.split('\n');
+          lines.forEach((line, i) => {
+            const dy = i === 0 ? 0 : el.fontSize * 1.3;
+            const safe = encodeXML(line.length === 0 ? '\u00A0' : line);
+            content += `      <tspan x="${textX}" dy="${dy}">${safe}</tspan>\n`;
+          });
           content += `    </text>\n`;
           break;
         }

@@ -19,6 +19,11 @@ import { ShortcutsGuideModal } from './components/ShortcutsGuideModal';
 import { NewCanvasModal } from './components/NewCanvasModal';
 import { ClipboardGuideModal } from './components/ClipboardGuideModal';
 import { exportRegionToRaster } from './utils/rasterExport';
+import {
+  extractImageSlice,
+  getImageLocalIntersection,
+  punchHoleInImageElement,
+} from './utils/imageEdit';
 
 const INITIAL_CONFIG: CanvasConfig = {
   width: 1280,
@@ -40,149 +45,21 @@ const INITIAL_LAYERS: Layer[] = [
   },
   {
     id: 'layer-shapes',
-    name: '도형 및 벡터 (Shapes)',
+    name: '?�형 �?벡터 (Shapes)',
     visible: true,
     locked: false,
     opacity: 1,
   },
   {
     id: 'layer-text',
-    name: '텍스트 & 브러시 (Foreground)',
+    name: '?�스??& 브러??(Foreground)',
     visible: true,
     locked: false,
     opacity: 1,
   },
 ];
 
-const INITIAL_ELEMENTS: CanvasElement[] = [
-  // Background card shape
-  {
-    id: 'elem-banner',
-    layerId: 'layer-shapes',
-    name: '메인 배너 카드',
-    type: 'shape',
-    shapeType: 'rounded-rect',
-    x: 100,
-    y: 80,
-    width: 1080,
-    height: 560,
-    rotation: 0,
-    opacity: 1,
-    fill: '#F8FAFC',
-    stroke: '#E2E8F0',
-    strokeWidth: 2,
-    strokeDash: 'solid',
-    cornerRadius: 24,
-    shadow: {
-      enabled: true,
-      color: 'rgba(0, 0, 0, 0.08)',
-      blur: 24,
-      offsetX: 0,
-      offsetY: 8,
-    },
-  },
-  // Sample PPT Shape: Gradient Rounded Box
-  {
-    id: 'elem-card-1',
-    layerId: 'layer-shapes',
-    name: '디자인 그라데이션 박스',
-    type: 'shape',
-    shapeType: 'rounded-rect',
-    x: 160,
-    y: 160,
-    width: 320,
-    height: 380,
-    rotation: -2,
-    opacity: 1,
-    fill: '#4F46E5',
-    gradient: {
-      enabled: true,
-      type: 'linear',
-      startColor: '#4F46E5',
-      endColor: '#EC4899',
-      angle: 135,
-    },
-    stroke: '#312E81',
-    strokeWidth: 0,
-    strokeDash: 'solid',
-    cornerRadius: 16,
-    shadow: {
-      enabled: true,
-      color: 'rgba(79, 70, 229, 0.35)',
-      blur: 20,
-      offsetX: 4,
-      offsetY: 10,
-    },
-  },
-  // Sample Star Shape
-  {
-    id: 'elem-star',
-    layerId: 'layer-shapes',
-    name: '골드 스타',
-    type: 'shape',
-    shapeType: 'star',
-    x: 520,
-    y: 160,
-    width: 140,
-    height: 140,
-    rotation: 12,
-    opacity: 1,
-    fill: '#F59E0B',
-    stroke: '#D97706',
-    strokeWidth: 2,
-    strokeDash: 'solid',
-    shadow: {
-      enabled: true,
-      color: 'rgba(245, 158, 11, 0.4)',
-      blur: 16,
-      offsetX: 0,
-      offsetY: 6,
-    },
-  },
-  // Sample PPT Arrow
-  {
-    id: 'elem-arrow',
-    layerId: 'layer-shapes',
-    name: '진행 화살표',
-    type: 'shape',
-    shapeType: 'arrow-right',
-    x: 700,
-    y: 195,
-    width: 130,
-    height: 70,
-    rotation: 0,
-    opacity: 1,
-    fill: '#10B981',
-    stroke: '#059669',
-    strokeWidth: 1,
-    strokeDash: 'solid',
-  },
-  // Sample Speech Bubble
-  {
-    id: 'elem-callout',
-    layerId: 'layer-shapes',
-    name: '안내 말풍선',
-    type: 'shape',
-    shapeType: 'speech-bubble',
-    x: 860,
-    y: 160,
-    width: 260,
-    height: 140,
-    rotation: 0,
-    opacity: 1,
-    fill: '#FFFFFF',
-    stroke: '#0284C7',
-    strokeWidth: 2,
-    strokeDash: 'solid',
-    shadow: {
-      enabled: true,
-      color: 'rgba(2, 132, 199, 0.2)',
-      blur: 12,
-      offsetX: 2,
-      offsetY: 6,
-    },
-  },
-];
+const INITIAL_ELEMENTS: CanvasElement[] = [];
 
 export default function App() {
   // State
@@ -192,7 +69,7 @@ export default function App() {
   const [elements, setElements] = useState<CanvasElement[]>(INITIAL_ELEMENTS);
 
   // Multi-element selection state
-  const [selectedElementIds, setSelectedElementIds] = useState<string[]>(['elem-card-1']);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const selectedElementId = selectedElementIds[selectedElementIds.length - 1] || null;
 
   // Persistent shape styling (Feature 5: applied to subsequent shapes)
@@ -244,6 +121,8 @@ export default function App() {
   // Canvas-wide Crop Box State (for Screen/Canvas Region Capture)
   const activeCanvasCropBoxRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const lastMouseCanvasPosRef = useRef<{ x: number; y: number } | null>(null);
+  const elementsRef = useRef(elements);
+  elementsRef.current = elements;
 
   // Internal Clipboard for Object Copy/Cut and Image Slice Cut/Copy
   const internalClipboardRef = useRef<{
@@ -269,6 +148,17 @@ export default function App() {
   const handleFinishCropImage = useCallback(() => {
     setCroppingImageId(null);
   }, []);
+
+  // Switching tools: canvas crop must not keep selection/transform active
+  const handleSelectTool = useCallback((tool: ToolType) => {
+    if (tool === 'crop') {
+      setSelectedElementIds([]);
+      setCroppingImageId(null);
+    } else if (tool !== 'select' && croppingImageId) {
+      setCroppingImageId(null);
+    }
+    setCurrentTool(tool);
+  }, [croppingImageId]);
 
   const toggleLeftPanel = useCallback(() => {
     setIsLeftPanelOpen((prev) => !prev);
@@ -341,30 +231,95 @@ export default function App() {
     }
   }, [historyIndex, history]);
 
-  // Selection handlers
+  // Selection handlers ??sync selected object's color/style for subsequent drawing
   const handleSelectElement = useCallback(
     (id: string | null) => {
       setSelectedElementIds(id ? [id] : []);
-      if (id) {
-        const target = elements.find((e) => e.id === id);
-        if (target && target.type === 'shape') {
-          const isLineShape = target.shapeType === 'line' || target.shapeType === 'line-arrow';
-          if (isLineShape) {
-            setSelectedShapeType(target.shapeType);
-            if (target.stroke && target.stroke !== 'none') {
-              setPrimaryColor(target.stroke);
-            }
-            if (target.strokeWidth) {
-              setStrokeWidth(target.strokeWidth);
-            }
-            setLastShapeStyle((prev) => ({
-              ...prev,
-              stroke: target.stroke,
-              strokeWidth: target.strokeWidth,
-              strokeDash: target.strokeDash,
-            }));
+      if (!id) return;
+
+      const target = elements.find((e) => e.id === id);
+      if (!target) return;
+
+      if (target.type === 'shape') {
+        const isLineShape =
+          target.shapeType === 'line' ||
+          target.shapeType === 'line-arrow' ||
+          target.shapeType === 'polyline' || target.shapeType === 'arc';
+
+        if (isLineShape) {
+          setSelectedShapeType(target.shapeType);
+          if (target.stroke && target.stroke !== 'none') {
+            setPrimaryColor(target.stroke);
           }
+          if (target.strokeWidth) {
+            setStrokeWidth(target.strokeWidth);
+          }
+          setLastShapeStyle((prev) => ({
+            ...prev,
+            stroke: target.stroke !== 'none' ? target.stroke : prev.stroke,
+            strokeWidth: target.strokeWidth,
+            strokeDash: target.strokeDash,
+            opacity: target.opacity,
+            shadow: target.shadow,
+            gradient: target.gradient?.enabled
+              ? { ...target.gradient, enabled: false }
+              : prev.gradient
+                ? { ...prev.gradient, enabled: false }
+                : undefined,
+          }));
+        } else {
+          setSelectedShapeType(target.shapeType);
+          const fillColor =
+            target.fill && target.fill !== 'none'
+              ? target.fill
+              : target.gradient?.enabled
+                ? target.gradient.startColor
+                : null;
+          if (fillColor) {
+            setPrimaryColor(fillColor);
+          } else if (target.stroke && target.stroke !== 'none') {
+            setPrimaryColor(target.stroke);
+          }
+          if (target.strokeWidth) {
+            setStrokeWidth(target.strokeWidth);
+          }
+          setLastShapeStyle((prev) => ({
+            ...prev,
+            fill: fillColor || prev.fill,
+            stroke:
+              target.stroke && target.stroke !== 'none' ? target.stroke : fillColor || prev.stroke,
+            strokeWidth: target.strokeWidth,
+            strokeDash: target.strokeDash,
+            cornerRadius: target.cornerRadius ?? prev.cornerRadius,
+            opacity: target.opacity,
+            gradient: target.gradient,
+            shadow: target.shadow,
+          }));
         }
+      } else if (target.type === 'brush') {
+        setPrimaryColor(target.color);
+        setStrokeWidth(
+          target.isHighlighter
+            ? Math.max(2, Math.round(target.strokeWidth / 3))
+            : target.strokeWidth
+        );
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: target.color,
+          stroke: target.color,
+          strokeWidth: target.isHighlighter
+            ? Math.max(2, Math.round(target.strokeWidth / 3))
+            : target.strokeWidth,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
+        }));
+      } else if (target.type === 'text') {
+        setPrimaryColor(target.color);
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: target.color,
+          stroke: target.color,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
+        }));
       }
     },
     [elements]
@@ -389,7 +344,7 @@ export default function App() {
 
   // Clear Canvas
   const handleClearCanvas = () => {
-    if (window.confirm('캔버스의 모든 요소를 비우시겠습니까?')) {
+    if (window.confirm('캔버?�의 모든 ?�소�?비우?�겠?�니�?')) {
       const nextElements: CanvasElement[] = [];
       setElements(nextElements);
       setSelectedElementIds([]);
@@ -403,7 +358,10 @@ export default function App() {
       const next = [...elements, newElem];
       setElements(next);
       if (newElem.type === 'shape') {
-        const isLineShape = newElem.shapeType === 'line' || newElem.shapeType === 'line-arrow';
+        const isLineShape =
+          newElem.shapeType === 'line' ||
+          newElem.shapeType === 'line-arrow' ||
+          newElem.shapeType === 'polyline' || newElem.shapeType === 'arc';
         if (isLineShape) {
           setSelectedShapeType(newElem.shapeType);
           if (newElem.stroke && newElem.stroke !== 'none') {
@@ -412,17 +370,42 @@ export default function App() {
           if (newElem.strokeWidth) {
             setStrokeWidth(newElem.strokeWidth);
           }
+        } else if (newElem.fill && newElem.fill !== 'none') {
+          setPrimaryColor(newElem.fill);
         }
         setLastShapeStyle((prev) => ({
           ...prev,
-          fill: isLineShape ? prev.fill : newElem.fill,
+          fill: isLineShape
+            ? prev.fill
+            : newElem.fill && newElem.fill !== 'none'
+              ? newElem.fill
+              : prev.fill,
           stroke: newElem.stroke && newElem.stroke !== 'none' ? newElem.stroke : prev.stroke,
           strokeWidth: newElem.strokeWidth,
           strokeDash: newElem.strokeDash,
           cornerRadius: newElem.cornerRadius ?? prev.cornerRadius,
           opacity: newElem.opacity,
-          gradient: newElem.gradient,
+          gradient: newElem.gradient?.enabled ? newElem.gradient : undefined,
           shadow: newElem.shadow,
+        }));
+      } else if (newElem.type === 'brush') {
+        setPrimaryColor(newElem.color);
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: newElem.color,
+          stroke: newElem.color,
+          strokeWidth: newElem.isHighlighter
+            ? Math.max(2, Math.round(newElem.strokeWidth / 3))
+            : newElem.strokeWidth,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
+        }));
+      } else if (newElem.type === 'text') {
+        setPrimaryColor(newElem.color);
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: newElem.color,
+          stroke: newElem.color,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
         }));
       }
       pushHistory(next, layers, config);
@@ -430,14 +413,15 @@ export default function App() {
     [elements, layers, config, pushHistory]
   );
 
-  // Update Element
+  // Update Element (skipHistory: live drag/resize — commit once on mouse up)
   const handleUpdateElement = useCallback(
-    (updated: CanvasElement) => {
+    (updated: CanvasElement, options?: { skipHistory?: boolean }) => {
       const next = elements.map((el) => (el.id === updated.id ? updated : el));
+      elementsRef.current = next;
       setElements(next);
       // Feature 5: Keep style persistent for future shapes & lines
       if (updated.type === 'shape') {
-        const isLineShape = updated.shapeType === 'line' || updated.shapeType === 'line-arrow';
+        const isLineShape = updated.shapeType === 'line' || updated.shapeType === 'line-arrow' || updated.shapeType === 'polyline' || updated.shapeType === 'arc';
         if (isLineShape) {
           // Keep line shape type sticky for next drawings
           setSelectedShapeType(updated.shapeType);
@@ -453,20 +437,67 @@ export default function App() {
 
         setLastShapeStyle((prev) => ({
           ...prev,
-          fill: isLineShape ? prev.fill : updated.fill,
+          fill: isLineShape
+            ? prev.fill
+            : updated.fill && updated.fill !== 'none'
+              ? updated.fill
+              : prev.fill,
           stroke: updated.stroke && updated.stroke !== 'none' ? updated.stroke : prev.stroke,
           strokeWidth: updated.strokeWidth,
           strokeDash: updated.strokeDash,
           cornerRadius: updated.cornerRadius ?? prev.cornerRadius,
           opacity: updated.opacity,
-          gradient: updated.gradient,
+          gradient: updated.gradient?.enabled ? updated.gradient : undefined,
           shadow: updated.shadow,
         }));
+      } else if (updated.type === 'brush') {
+        setPrimaryColor(updated.color);
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: updated.color,
+          stroke: updated.color,
+          strokeWidth: updated.isHighlighter
+            ? Math.max(2, Math.round(updated.strokeWidth / 3))
+            : updated.strokeWidth,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
+        }));
+      } else if (updated.type === 'text') {
+        setPrimaryColor(updated.color);
+        setLastShapeStyle((prev) => ({
+          ...prev,
+          fill: updated.color,
+          stroke: updated.color,
+          gradient: prev.gradient ? { ...prev.gradient, enabled: false } : undefined,
+        }));
       }
-      pushHistory(next, layers, config);
+      if (!options?.skipHistory) {
+        pushHistory(next, layers, config);
+      }
     },
     [elements, layers, config, pushHistory]
   );
+
+  // Batch-update multiple elements in one commit (group move / multi-edit)
+  const handleUpdateElements = useCallback(
+    (updatedList: CanvasElement[], options?: { skipHistory?: boolean }) => {
+      if (updatedList.length === 0) return;
+      const map = new Map(updatedList.map((u) => [u.id, u]));
+      setElements((prev) => {
+        const next = prev.map((el) => map.get(el.id) ?? el);
+        elementsRef.current = next;
+        if (!options?.skipHistory) {
+          pushHistory(next, layers, config);
+        }
+        return next;
+      });
+    },
+    [layers, config, pushHistory]
+  );
+
+  // Commit live edits (e.g. finished drag) as a single undo step
+  const handleCommitHistory = useCallback(() => {
+    pushHistory(elementsRef.current, layers, config);
+  }, [layers, config, pushHistory]);
 
   // Delete Element (single or multiple)
   const handleDeleteElement = useCallback(
@@ -553,13 +584,13 @@ export default function App() {
       setConfig(nextConfig);
       setElements(nextElements);
       pushHistory(nextElements, layers, nextConfig);
-      setCurrentTool('select');
-      showToast(`캔버스가 ${nextConfig.width}×${nextConfig.height}px 크기로 잘라졌습니다.`);
+      showToast(`캔버?��? ${nextConfig.width}×${nextConfig.height}px ?�기�??�라졌습?�다.`);
     },
     [config, elements, layers, pushHistory, showToast]
   );
 
   // Cut Screen/Canvas Dragged Region (Ctrl+X when Crop box is active)
+  // Punches transparent holes in intersecting images; slice goes to clipboard only (not placed on canvas).
   const handleCutCanvasRegion = useCallback(
     async (region: { x: number; y: number; w: number; h: number }) => {
       if (region.w < 5 || region.h < 5) return;
@@ -573,16 +604,21 @@ export default function App() {
           false
         );
 
+        const sliceW = Math.round(region.w);
+        const sliceH = Math.round(region.h);
+        const sliceX = Math.round(region.x);
+        const sliceY = Math.round(region.y);
+
         internalClipboardRef.current = {
           type: 'image-slice',
           imageSlice: {
             src: dataUrl,
-            width: Math.round(region.w),
-            height: Math.round(region.h),
-            naturalWidth: Math.round(region.w),
-            naturalHeight: Math.round(region.h),
-            suggestedX: Math.round(region.x + 24),
-            suggestedY: Math.round(region.y + 24),
+            width: sliceW,
+            height: sliceH,
+            naturalWidth: sliceW,
+            naturalHeight: sliceH,
+            suggestedX: sliceX + 24,
+            suggestedY: sliceY + 24,
           },
         };
 
@@ -599,48 +635,49 @@ export default function App() {
         const regRight = region.x + region.w;
         const regBottom = region.y + region.h;
 
-        // Remove elements completely inside region
-        const remainingElements = elements.filter((el) => {
+        const keptSlots: CanvasElement[] = [];
+        const punchById = new Map<string, Promise<ImageElement>>();
+
+        for (const el of elements) {
           const elRight = el.x + el.width;
           const elBottom = el.y + el.height;
-          const isInside =
+          const isFullyInside =
             el.x >= region.x &&
             elRight <= regRight &&
             el.y >= region.y &&
             elBottom <= regBottom;
-          return !isInside;
-        });
 
-        // Add a background patch to cut out any intersecting shapes/images cleanly
-        const cutoutPatch: CanvasElement = {
-          id: `cutout-${Date.now()}`,
-          layerId: activeLayerId,
-          name: '오려낸 배경 패치',
-          type: 'shape',
-          shapeType: 'rect',
-          x: Math.round(region.x),
-          y: Math.round(region.y),
-          width: Math.round(region.w),
-          height: Math.round(region.h),
-          rotation: 0,
-          opacity: 1,
-          fill: config.backgroundColor || '#FFFFFF',
-          stroke: 'none',
-          strokeWidth: 0,
-          strokeDash: 'solid',
-        };
+          // Fully inside -> remove (contents already captured in the slice)
+          if (isFullyInside) continue;
 
-        const nextElements = [...remainingElements, cutoutPatch];
+          if (el.type === 'image') {
+            const local = getImageLocalIntersection(el, region);
+            if (local) {
+              punchById.set(el.id, punchHoleInImageElement(el, local));
+              keptSlots.push(el); // placeholder; replaced after punch resolves
+              continue;
+            }
+          }
+
+          keptSlots.push(el);
+        }
+
+        const punchedEntries = await Promise.all(
+          [...punchById.entries()].map(async ([id, task]) => [id, await task] as const)
+        );
+        const punchedMap = new Map<string, ImageElement>(punchedEntries);
+
+        const nextElements = keptSlots.map((el) => punchedMap.get(el.id) ?? el);
         setElements(nextElements);
+        setSelectedElementIds([]);
         pushHistory(nextElements, layers, config);
-        setCurrentTool('select');
-        showToast('✂️ 지정한 영역을 오려냈습니다. (Ctrl+V로 붙여넣기)');
+        showToast('선택 영역을 오려냈습니다. Ctrl+V로 붙여넣기 하세요.');
       } catch (err) {
         console.error('Failed to cut region:', err);
         showToast('영역 오려내기 중 오류가 발생했습니다.');
       }
     },
-    [layers, elements, config, activeLayerId, pushHistory, showToast]
+    [layers, elements, config, pushHistory, showToast]
   );
 
   // Copy Screen/Canvas Dragged Region (Ctrl+C when Crop box is active)
@@ -680,90 +717,13 @@ export default function App() {
           }
         }
 
-        showToast('📸 지정한 화면 영역이 캡쳐 복사되었습니다! (Ctrl+V로 붙여넣기)');
+        showToast('?�� 지?�한 ?�면 ?�역??캡쳐 복사?�었?�니?? (Ctrl+V�?붙여?�기)');
       } catch (err) {
         console.error('Failed to capture region:', err);
-        showToast('영역 캡쳐 중 오류가 발생했습니다.');
+        showToast('?�역 캡쳐 �??�류가 발생?�습?�다.');
       }
     },
     [layers, elements, config, showToast]
-  );
-
-  // Directly Copy and Paste Dragged Canvas Region as a new ImageElement
-  const handlePasteCanvasRegion = useCallback(
-    async (region: { x: number; y: number; w: number; h: number }) => {
-      if (region.w < 5 || region.h < 5) return;
-      try {
-        const { dataUrl, blob } = await exportRegionToRaster(
-          layers,
-          elements,
-          config,
-          region,
-          1,
-          false
-        );
-
-        internalClipboardRef.current = {
-          type: 'image-slice',
-          imageSlice: {
-            src: dataUrl,
-            width: Math.round(region.w),
-            height: Math.round(region.h),
-            naturalWidth: Math.round(region.w),
-            naturalHeight: Math.round(region.h),
-            suggestedX: Math.round(region.x + 36),
-            suggestedY: Math.round(region.y + 36),
-          },
-        };
-
-        if (blob && navigator.clipboard && window.ClipboardItem) {
-          try {
-            navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob }),
-            ]).catch(() => {});
-          } catch (e) {}
-        }
-
-        const newImg: ImageElement = {
-          id: `img-crop-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          type: 'image',
-          name: '캡쳐된 이미지',
-          layerId: activeLayerId,
-          x: Math.min(Math.max(0, region.x + 24), Math.max(0, config.width - region.w)),
-          y: Math.min(Math.max(0, region.y + 24), Math.max(0, config.height - region.h)),
-          width: Math.round(region.w),
-          height: Math.round(region.h),
-          src: dataUrl,
-          naturalWidth: Math.round(region.w),
-          naturalHeight: Math.round(region.h),
-          rotation: 0,
-          opacity: 1,
-          visible: true,
-          locked: false,
-          filters: {
-            brightness: 100,
-            contrast: 100,
-            saturation: 100,
-            blur: 0,
-            grayscale: 0,
-            invert: 0,
-          },
-        };
-
-        setElements((prev) => {
-          const next = [...prev, newImg];
-          pushHistory(next, layers, config);
-          return next;
-        });
-        setSelectedElementIds([newImg.id]);
-        setCurrentTool('select');
-        showToast('📋 캡쳐된 이미지가 화면에 붙여넣어졌습니다. 원하는 위치로 이동하세요.');
-      } catch (err) {
-        console.error('Failed to paste captured region:', err);
-        showToast('붙여넣기 중 오류가 발생했습니다.');
-      }
-    },
-    [layers, elements, config, activeLayerId, pushHistory, showToast]
   );
 
   // Copy Selected Canvas Elements (Ctrl+C)
@@ -776,10 +736,14 @@ export default function App() {
       type: 'elements',
       elements: JSON.parse(JSON.stringify(selected)),
     };
-    showToast(`${selected.length}개 객체가 복사되었습니다. (Ctrl+V로 붙여넣기)`);
+    // Replace any leftover OS clipboard image so Ctrl+V pastes these elements
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText('').catch(() => {});
+    }
+    showToast(`${selected.length}�?객체가 복사?�었?�니?? (Ctrl+V�?붙여?�기)`);
   }, [elements, selectedElementIds, showToast]);
 
-  // Cut (오려내기/잘라내기) Selected Canvas Elements (Ctrl+X)
+  // Cut (?�려?�기/?�라?�기) Selected Canvas Elements (Ctrl+X)
   const handleCutSelectedElements = useCallback(() => {
     if (selectedElementIds.length === 0) return;
     const selected = elements.filter((el) => selectedElementIds.includes(el.id));
@@ -789,8 +753,11 @@ export default function App() {
       type: 'elements',
       elements: JSON.parse(JSON.stringify(selected)),
     };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText('').catch(() => {});
+    }
     handleDeleteSelectedElements();
-    showToast(`${selected.length}개 객체를 잘라냈습니다. (Ctrl+V로 붙여넣기)`);
+    showToast(`${selected.length}�?객체�??�라?�습?�다. (Ctrl+V�?붙여?�기)`);
   }, [elements, selectedElementIds, handleDeleteSelectedElements, showToast]);
 
   // Copy Selected Region of an Image (Ctrl+C in crop mode)
@@ -848,7 +815,7 @@ export default function App() {
           }
         }
 
-        showToast('선택한 이미지 영역이 복사되었습니다. (Ctrl+V로 붙여넣기)');
+        showToast('?�택???��?지 ?�역??복사?�었?�니?? (Ctrl+V�?붙여?�기)');
       };
       img.src = imgElem.src;
     },
@@ -856,91 +823,57 @@ export default function App() {
   );
 
   // Cut (오려내기) Selected Region of an Image (Ctrl+X in crop mode)
-  // Copies selected portion to clipboard AND clears it out from original image
+  // Clipboard only + transparent hole in original. Do not place the slice back on canvas.
   const handleCutImagePart = useCallback(
     async (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => {
       if (crop.w < 5 || crop.h < 5) return;
-      const naturalW = imgElem.naturalWidth || imgElem.width;
-      const naturalH = imgElem.naturalHeight || imgElem.height;
-      const scaleX = naturalW / imgElem.width;
-      const scaleY = naturalH / imgElem.height;
+      try {
+        const [slice, punched] = await Promise.all([
+          extractImageSlice(imgElem, crop),
+          punchHoleInImageElement(imgElem, crop),
+        ]);
 
-      const sx = Math.max(0, crop.x * scaleX);
-      const sy = Math.max(0, crop.y * scaleY);
-      const sw = Math.min(naturalW - sx, crop.w * scaleX);
-      const sh = Math.min(naturalH - sy, crop.h * scaleY);
-
-      if (sw < 1 || sh < 1) return;
-
-      const sliceCanvas = document.createElement('canvas');
-      sliceCanvas.width = Math.round(sw);
-      sliceCanvas.height = Math.round(sh);
-      const sliceCtx = sliceCanvas.getContext('2d');
-      if (!sliceCtx) return;
-
-      const origCanvas = document.createElement('canvas');
-      origCanvas.width = naturalW;
-      origCanvas.height = naturalH;
-      const origCtx = origCanvas.getContext('2d');
-      if (!origCtx) return;
-
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        // Extract sliced portion
-        sliceCtx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-        const slicedSrc = sliceCanvas.toDataURL('image/png');
-
-        // Draw original and cut out transparent hole
-        origCtx.drawImage(img, 0, 0);
-        origCtx.clearRect(sx, sy, sw, sh);
-        const modifiedOrigSrc = origCanvas.toDataURL('image/png');
+        const pieceX = Math.round(imgElem.x + crop.x);
+        const pieceY = Math.round(imgElem.y + crop.y);
+        const pieceW = Math.round(crop.w);
+        const pieceH = Math.round(crop.h);
 
         internalClipboardRef.current = {
           type: 'image-slice',
           imageSlice: {
-            src: slicedSrc,
-            width: Math.round(crop.w),
-            height: Math.round(crop.h),
-            naturalWidth: Math.round(sw),
-            naturalHeight: Math.round(sh),
-            suggestedX: Math.round(imgElem.x + crop.x + 24),
-            suggestedY: Math.round(imgElem.y + crop.y + 24),
+            src: slice.src,
+            width: pieceW,
+            height: pieceH,
+            naturalWidth: slice.naturalWidth,
+            naturalHeight: slice.naturalHeight,
+            suggestedX: pieceX + 24,
+            suggestedY: pieceY + 24,
           },
         };
 
         if (navigator.clipboard && window.ClipboardItem) {
           try {
-            sliceCanvas.toBlob((blob) => {
-              if (blob) {
-                navigator.clipboard.write([
-                  new ClipboardItem({ 'image/png': blob }),
-                ]).catch(() => {});
-              }
-            }, 'image/png');
+            const res = await fetch(slice.src);
+            const blob = await res.blob();
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
           } catch (e) {
             console.warn('System clipboard write warning:', e);
           }
         }
 
-        // Update original image element with transparent cutout
         setElements((prev) => {
-          const next = prev.map((el) =>
-            el.id === imgElem.id
-              ? {
-                  ...el,
-                  src: modifiedOrigSrc,
-                }
-              : el
-          );
+          const next = prev.map((el) => (el.id === imgElem.id ? punched : el));
           pushHistory(next, layers, config);
           return next;
         });
-
+        setSelectedElementIds([imgElem.id]);
         setCroppingImageId(null);
-        showToast('선택 영역을 오려냈습니다. (Ctrl+V로 새 객체로 붙여넣기)');
-      };
-      img.src = imgElem.src;
+        setCurrentTool('select');
+        showToast('선택 영역을 오려냈습니다. Ctrl+V로 붙여넣기 하세요.');
+      } catch (err) {
+        console.error('Failed to cut image part:', err);
+        showToast('이미지 오려내기 중 오류가 발생했습니다.');
+      }
     },
     [layers, config, pushHistory, showToast]
   );
@@ -1052,7 +985,7 @@ export default function App() {
   const handleAddLayer = () => {
     const newLayer: Layer = {
       id: 'layer-' + Date.now(),
-      name: `레이어 ${layers.length + 1}`,
+      name: `?�이??${layers.length + 1}`,
       visible: true,
       locked: false,
       opacity: 1,
@@ -1084,7 +1017,7 @@ export default function App() {
     const newLayer: Layer = {
       ...targetLayer,
       id: newLayerId,
-      name: `${targetLayer.name} (복사본)`,
+      name: `${targetLayer.name} (복사�?`,
     };
 
     // Duplicate all elements belonging to this layer
@@ -1137,7 +1070,7 @@ export default function App() {
 
   // Insert Image from source URL or data URL
   const handleInsertImageSrc = useCallback(
-    (src: string, name = '붙여넣은 이미지') => {
+    (src: string, name = '붙여?��? ?��?지') => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -1147,8 +1080,18 @@ export default function App() {
         const ratio = naturalW / naturalH;
         const width = Math.min(maxWidth, naturalW);
         const height = width / ratio;
-        const x = Math.round((config.width - width) / 2);
-        const y = Math.round((config.height - height) / 2);
+        let x = Math.round((config.width - width) / 2);
+        let y = Math.round((config.height - height) / 2);
+        if (lastMouseCanvasPosRef.current) {
+          const mx = lastMouseCanvasPosRef.current.x;
+          const my = lastMouseCanvasPosRef.current.y;
+          if (mx >= 0 && mx <= config.width && my >= 0 && my <= config.height) {
+            x = Math.round(mx - width / 2);
+            y = Math.round(my - height / 2);
+          }
+        }
+        x = Math.min(Math.max(0, x), Math.max(0, config.width - width));
+        y = Math.min(Math.max(0, y), Math.max(0, config.height - height));
 
         const newImgElem: ImageElement = {
           id: 'image-' + Date.now(),
@@ -1181,10 +1124,10 @@ export default function App() {
         });
         setSelectedElementIds([newImgElem.id]);
         setCurrentTool('select');
-        showToast('🖼️ 클립보드 이미지가 성공적으로 캔버스에 추가되었습니다!');
+        showToast('클립보드 이미지를 캔버스에 붙여넣었습니다.');
       };
       img.onerror = () => {
-        alert('이미지 데이터를 불러오는데 실패했습니다.');
+        alert('이미지 데이터를 불러오는 데 실패했습니다.');
       };
       img.src = src;
     },
@@ -1198,7 +1141,7 @@ export default function App() {
       reader.onload = (e) => {
         const src = e.target?.result as string;
         if (src) {
-          handleInsertImageSrc(src, file.name || '삽입된 이미지');
+          handleInsertImageSrc(src, file.name || '?�입???��?지');
         }
       };
       reader.readAsDataURL(file);
@@ -1206,9 +1149,107 @@ export default function App() {
     [handleInsertImageSrc]
   );
 
-  // Button-triggered Paste from Clipboard (Async Clipboard API)
-  const handlePasteFromClipboard = useCallback(async () => {
-    // 1. Try reading from Clipboard API directly
+  // Paste only from the app's internal clipboard (cut/copy inside the app).
+  // Returns true if something was pasted.
+  const pasteFromInternalClipboard = useCallback((): boolean => {
+    const clip = internalClipboardRef.current;
+    if (!clip) return false;
+
+    if (clip.type === 'image-slice' && clip.imageSlice) {
+      const slice = clip.imageSlice;
+      let targetX = slice.suggestedX ?? 50;
+      let targetY = slice.suggestedY ?? 50;
+
+      if (lastMouseCanvasPosRef.current) {
+        const mx = lastMouseCanvasPosRef.current.x;
+        const my = lastMouseCanvasPosRef.current.y;
+        if (mx >= 0 && mx <= config.width && my >= 0 && my <= config.height) {
+          targetX = Math.round(mx - slice.width / 2);
+          targetY = Math.round(my - slice.height / 2);
+        }
+      }
+
+      const newImg: ImageElement = {
+        id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        type: 'image',
+        name: '오려낸 이미지',
+        layerId: activeLayerId,
+        x: Math.min(Math.max(0, targetX), Math.max(0, config.width - slice.width)),
+        y: Math.min(Math.max(0, targetY), Math.max(0, config.height - slice.height)),
+        width: slice.width,
+        height: slice.height,
+        src: slice.src,
+        naturalWidth: slice.naturalWidth,
+        naturalHeight: slice.naturalHeight,
+        rotation: 0,
+        opacity: 1,
+        visible: true,
+        locked: false,
+        filters: {
+          brightness: 100,
+          contrast: 100,
+          saturation: 100,
+          blur: 0,
+          grayscale: 0,
+          invert: 0,
+        },
+      };
+      slice.suggestedX = (slice.suggestedX ?? 50) + 24;
+      slice.suggestedY = (slice.suggestedY ?? 50) + 24;
+
+      setElements((prev) => {
+        const next = [...prev, newImg];
+        pushHistory(next, layers, config);
+        return next;
+      });
+      setSelectedElementIds([newImg.id]);
+      setCurrentTool('select');
+      showToast('클립보드 이미지를 붙여넣었습니다.');
+      return true;
+    }
+
+    if (clip.type === 'elements' && clip.elements) {
+      const cloned = clip.elements.map((el, i) => {
+        const newId = `${el.type}-${Date.now()}-${i}`;
+        const nextX = el.x + 24;
+        const nextY = el.y + 24;
+        if (el.type === 'brush' && el.points) {
+          return {
+            ...el,
+            id: newId,
+            layerId: activeLayerId,
+            x: nextX,
+            y: nextY,
+            points: el.points.map((p) => ({ x: p.x + 24, y: p.y + 24 })),
+          };
+        }
+        return {
+          ...el,
+          id: newId,
+          layerId: activeLayerId,
+          x: nextX,
+          y: nextY,
+        };
+      });
+
+      clip.elements = cloned;
+
+      setElements((prev) => {
+        const next = [...prev, ...cloned];
+        pushHistory(next, layers, config);
+        return next;
+      });
+      setSelectedElementIds(cloned.map((c) => c.id));
+      setCurrentTool('select');
+      showToast(`${cloned.length}개 객체를 붙여넣었습니다.`);
+      return true;
+    }
+
+    return false;
+  }, [activeLayerId, config, layers, pushHistory, showToast]);
+
+  // Read image/text from the OS clipboard (Windows screenshot, Snipping Tool, etc.)
+  const handlePasteFromClipboard = useCallback(async (): Promise<boolean> => {
     if (navigator.clipboard && navigator.clipboard.read) {
       try {
         const items = await navigator.clipboard.read();
@@ -1218,18 +1259,14 @@ export default function App() {
             const blob = await item.getType(imageType);
             const file = new File([blob], 'clipboard-image.png', { type: imageType });
             handleInsertImage(file);
-            return;
+            return true;
           }
         }
       } catch (err) {
-        console.warn('Clipboard read() permission denied or unsupported in iframe:', err);
-        // Show guidance modal if iframe policy blocks direct clipboard reading
-        setIsClipboardGuideOpen(true);
-        return;
+        console.warn('Clipboard read() failed:', err);
       }
     }
 
-    // 2. Try reading clipboard text (e.g. image URL or data-URI)
     if (navigator.clipboard && navigator.clipboard.readText) {
       try {
         const text = (await navigator.clipboard.readText()).trim();
@@ -1238,150 +1275,29 @@ export default function App() {
           /^https?:\/\/.+\.(png|jpe?g|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(text)
         ) {
           handleInsertImageSrc(text, '클립보드 이미지');
-          return;
+          return true;
         }
       } catch (err) {
-        console.warn('Clipboard readText() failed in iframe:', err);
-        setIsClipboardGuideOpen(true);
-        return;
+        console.warn('Clipboard readText() failed:', err);
       }
     }
 
-    // If neither succeeded (e.g. sandbox block or empty clipboard), open guide modal
-    setIsClipboardGuideOpen(true);
+    return false;
   }, [handleInsertImage, handleInsertImageSrc]);
 
-  // Unified Paste Action (Internal Clipboard > System Clipboard)
-  const handlePasteAction = useCallback(() => {
-    // 1. Check internal clipboard first (e.g. cut/copied image slice or elements)
-    if (internalClipboardRef.current) {
-      if (
-        internalClipboardRef.current.type === 'image-slice' &&
-        internalClipboardRef.current.imageSlice
-      ) {
-        const slice = internalClipboardRef.current.imageSlice;
+  // Unified Paste: OS clipboard image first, then app internal clipboard
+  const handlePasteAction = useCallback(async () => {
+    const fromSystem = await handlePasteFromClipboard();
+    if (fromSystem) return;
 
-        // If mouse is currently hovering over the canvas, paste at cursor position!
-        let targetX = slice.suggestedX ?? 50;
-        let targetY = slice.suggestedY ?? 50;
+    if (pasteFromInternalClipboard()) return;
 
-        if (lastMouseCanvasPosRef.current) {
-          const mx = lastMouseCanvasPosRef.current.x;
-          const my = lastMouseCanvasPosRef.current.y;
-          if (mx >= 0 && mx <= config.width && my >= 0 && my <= config.height) {
-            targetX = Math.round(mx - slice.width / 2);
-            targetY = Math.round(my - slice.height / 2);
-          }
-        }
+    setIsClipboardGuideOpen(true);
+  }, [handlePasteFromClipboard, pasteFromInternalClipboard]);
 
-        const newImg: ImageElement = {
-          id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          type: 'image',
-          name: '캡쳐된 이미지',
-          layerId: activeLayerId,
-          x: Math.min(Math.max(0, targetX), Math.max(0, config.width - slice.width)),
-          y: Math.min(Math.max(0, targetY), Math.max(0, config.height - slice.height)),
-          width: slice.width,
-          height: slice.height,
-          src: slice.src,
-          naturalWidth: slice.naturalWidth,
-          naturalHeight: slice.naturalHeight,
-          rotation: 0,
-          opacity: 1,
-          visible: true,
-          locked: false,
-          filters: {
-            brightness: 100,
-            contrast: 100,
-            saturation: 100,
-            blur: 0,
-            grayscale: 0,
-            invert: 0,
-          },
-        };
-        slice.suggestedX = (slice.suggestedX ?? 50) + 24;
-        slice.suggestedY = (slice.suggestedY ?? 50) + 24;
-
-        setElements((prev) => {
-          const next = [...prev, newImg];
-          pushHistory(next, layers, config);
-          return next;
-        });
-        setSelectedElementIds([newImg.id]);
-        setCurrentTool('select');
-        showToast('📋 캡쳐된 이미지를 붙여넣었습니다. 마우스로 원하는 위치로 이동하세요.');
-        return;
-      }
-
-      if (
-        internalClipboardRef.current.type === 'elements' &&
-        internalClipboardRef.current.elements
-      ) {
-        const cloned = internalClipboardRef.current.elements.map((el, i) => {
-          const newId = `${el.type}-${Date.now()}-${i}`;
-          const nextX = el.x + 24;
-          const nextY = el.y + 24;
-          if (el.type === 'brush' && el.points) {
-            return {
-              ...el,
-              id: newId,
-              layerId: activeLayerId,
-              x: nextX,
-              y: nextY,
-              points: el.points.map((p) => ({ x: p.x + 24, y: p.y + 24 })),
-            };
-          }
-          return {
-            ...el,
-            id: newId,
-            layerId: activeLayerId,
-            x: nextX,
-            y: nextY,
-          };
-        });
-
-        internalClipboardRef.current.elements = cloned;
-
-        setElements((prev) => {
-          const next = [...prev, ...cloned];
-          pushHistory(next, layers, config);
-          return next;
-        });
-        const newIds = cloned.map((c) => c.id);
-        setSelectedElementIds(newIds);
-        setCurrentTool('select');
-        showToast(`📋 ${cloned.length}개 객체를 붙여넣었습니다.`);
-        return;
-      }
-    }
-
-    // 2. Fallback to system clipboard
-    handlePasteFromClipboard();
-  }, [
-    activeLayerId,
-    config,
-    layers,
-    pushHistory,
-    showToast,
-    handlePasteFromClipboard,
-  ]);
-
-  // Global Clipboard Paste (Feature 7: CTRL+V Image Paste)
+  // Global Clipboard Paste (Ctrl+V): OS image first, then internal clipboard
   useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      // Don't intercept when typing in text input fields or contenteditable
-      const target = e.target as HTMLElement;
-      if (
-        target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      ) {
-        return;
-      }
-
-      const clipboardData = e.clipboardData;
-      if (!clipboardData) return;
-
-      // 1. Check direct file copies (e.g. files copied in Windows Explorer / Mac Finder)
+    const extractImageFileFromClipboard = (clipboardData: DataTransfer): File | null => {
       if (clipboardData.files && clipboardData.files.length > 0) {
         for (let i = 0; i < clipboardData.files.length; i++) {
           const file = clipboardData.files[i];
@@ -1389,14 +1305,11 @@ export default function App() {
             file.type.startsWith('image/') ||
             /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif)$/i.test(file.name)
           ) {
-            e.preventDefault();
-            handleInsertImage(file);
-            return;
+            return file;
           }
         }
       }
 
-      // 2. Check clipboard items (e.g. screenshots, Snipping Tool Win+Shift+S, web images)
       if (clipboardData.items && clipboardData.items.length > 0) {
         for (let i = 0; i < clipboardData.items.length; i++) {
           const item = clipboardData.items[i];
@@ -1408,26 +1321,55 @@ export default function App() {
                 /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif)$/i.test(file.name) ||
                 file.size > 0)
             ) {
-              e.preventDefault();
-              handleInsertImage(file);
-              return;
+              return file;
             }
           }
         }
       }
+      return null;
+    };
 
-      // 3. Check HTML content (e.g. copied from PowerPoint, Word, browser web page)
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      // 1) Windows / OS clipboard image (Snipping Tool, Win+Shift+S, Explorer copy, etc.)
+      const imageFile = extractImageFileFromClipboard(clipboardData);
+      if (imageFile) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleInsertImage(imageFile);
+        return;
+      }
+
+      // 2) App-internal cut/copy (shapes, slices) when OS clipboard has no image
+      if (internalClipboardRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        pasteFromInternalClipboard();
+        return;
+      }
+
+      // 3) HTML embedded image (Word / browser)
       const html = clipboardData.getData('text/html');
       if (html) {
         const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
         if (match && match[1]) {
           e.preventDefault();
-          handleInsertImageSrc(match[1], '웹 복사 이미지');
+          handleInsertImageSrc(match[1], '복사한 이미지');
           return;
         }
       }
 
-      // 4. Check plain text if it's an image link, base64 data-URL, or SVG code
+      // 4) Image URL / data-URI / SVG text
       const text = clipboardData.getData('text/plain')?.trim();
       if (text) {
         if (
@@ -1435,12 +1377,11 @@ export default function App() {
           /^https?:\/\/.+\.(png|jpe?g|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(text)
         ) {
           e.preventDefault();
-          setIsClipboardGuideOpen(false);
           handleInsertImageSrc(text, 'URL 이미지');
           return;
-        } else if (text.startsWith('<svg') && text.includes('</svg>')) {
+        }
+        if (text.startsWith('<svg') && text.includes('</svg>')) {
           e.preventDefault();
-          setIsClipboardGuideOpen(false);
           const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
           handleInsertImageSrc(svgDataUrl, '붙여넣은 SVG');
           return;
@@ -1448,14 +1389,11 @@ export default function App() {
       }
     };
 
-    // Attach to both window and document with capture to ensure event interception
-    window.addEventListener('paste', handlePaste, true);
     document.addEventListener('paste', handlePaste, true);
     return () => {
-      window.removeEventListener('paste', handlePaste, true);
       document.removeEventListener('paste', handlePaste, true);
     };
-  }, [handleInsertImage, handleInsertImageSrc]);
+  }, [handleInsertImage, handleInsertImageSrc, pasteFromInternalClipboard]);
 
   // Save Project as JSON
   const handleSaveProject = () => {
@@ -1472,7 +1410,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vector-studio-${Date.now()}.json`;
+    a.download = `imgman-${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1493,10 +1431,10 @@ export default function App() {
           setSelectedElementIds([]);
           pushHistory(data.elements, data.layers, data.config);
         } else {
-          alert('올바른 프로젝트 JSON 파일이 아닙니다.');
+          alert('?�바�??�로?�트 JSON ?�일???�닙?�다.');
         }
       } catch (err) {
-        alert('파일을 불러오는 중 오류가 발생했습니다.');
+        alert('?�일??불러?�는 �??�류가 발생?�습?�다.');
       }
     };
     reader.readAsText(file);
@@ -1505,10 +1443,14 @@ export default function App() {
   const handlePrimaryColorChange = useCallback(
     (color: string) => {
       setPrimaryColor(color);
+      // Persist for subsequent shapes / lines / paint; clear sticky gradient so solid color wins
       setLastShapeStyle((prev) => ({
         ...prev,
         fill: color,
         stroke: color,
+        gradient: prev.gradient
+          ? { ...prev.gradient, enabled: false, startColor: color }
+          : undefined,
       }));
 
       // Immediately update selected element if any
@@ -1519,11 +1461,20 @@ export default function App() {
             if (!selectedElementIds.includes(el.id)) return el;
             hasChanges = true;
             if (el.type === 'shape') {
-              const isLineShape = el.shapeType === 'line' || el.shapeType === 'line-arrow';
+              const isLineShape =
+                el.shapeType === 'line' ||
+                el.shapeType === 'line-arrow' ||
+                el.shapeType === 'polyline' || el.shapeType === 'arc';
               if (isLineShape || el.fill === 'none') {
                 return { ...el, stroke: color };
               }
-              return { ...el, fill: color };
+              return {
+                ...el,
+                fill: color,
+                gradient: el.gradient
+                  ? { ...el.gradient, enabled: false, startColor: color }
+                  : undefined,
+              };
             } else if (el.type === 'text') {
               return { ...el, color };
             } else if (el.type === 'brush') {
@@ -1553,11 +1504,12 @@ export default function App() {
             if (!selectedElementIds.includes(el.id)) return el;
             hasChanges = true;
             if (el.type === 'shape') {
-              const isLineShape = el.shapeType === 'line' || el.shapeType === 'line-arrow';
+              const isStraightLine =
+                el.shapeType === 'line' || el.shapeType === 'line-arrow';
               return {
                 ...el,
                 strokeWidth: w,
-                height: isLineShape ? Math.max(w * 4, 16) : el.height,
+                height: isStraightLine ? Math.max(w * 4, 16) : el.height,
               };
             } else if (el.type === 'brush') {
               return { ...el, strokeWidth: w };
@@ -1575,9 +1527,6 @@ export default function App() {
   );
 
   // Keyboard Nudge logic (Arrow keys for 1px, Shift + Arrow for 10px)
-  const elementsRef = useRef(elements);
-  elementsRef.current = elements;
-
   const nudgeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isNudgingRef = useRef(false);
 
@@ -1748,14 +1697,8 @@ export default function App() {
         }
       }
 
-      // Paste: Ctrl+V (prioritizes cut/copied slices or elements)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-        if (internalClipboardRef.current) {
-          e.preventDefault();
-          handlePasteAction();
-          return;
-        }
-      }
+      // Paste: Ctrl+V is handled by the native 'paste' event so Windows clipboard images work.
+      // (Do not preventDefault here — that would block clipboardData from the OS.)
 
       // Delete: Delete or Backspace
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1782,38 +1725,38 @@ export default function App() {
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         switch (e.key.toLowerCase()) {
           case 'v':
-            setCurrentTool('select');
+            handleSelectTool('select');
             break;
           case 'h':
-            setCurrentTool('pan');
+            handleSelectTool('pan');
             break;
           case 'b':
-            setCurrentTool('brush');
+            handleSelectTool('brush');
             break;
           case 'y':
-            setCurrentTool('highlighter');
+            handleSelectTool('highlighter');
             break;
           case 'e':
-            setCurrentTool('eraser');
+            handleSelectTool('eraser');
             break;
           case 'u':
-            setCurrentTool('shape');
+            handleSelectTool('shape');
             break;
           case 't':
-            setCurrentTool('text');
+            handleSelectTool('text');
             break;
           case 'k':
-            setCurrentTool('eyedropper');
+            handleSelectTool('eyedropper');
             break;
           case 'g':
-            setCurrentTool('fill');
+            handleSelectTool('fill');
             break;
           case 'c': {
             const currentSelected = elements.find((el) => el.id === selectedElementId);
             if (currentSelected && currentSelected.type === 'image') {
               handleStartCropImage(currentSelected.id);
             } else {
-              setCurrentTool('crop');
+              handleSelectTool('crop');
             }
             break;
           }
@@ -1864,6 +1807,7 @@ export default function App() {
     handleCutImagePart,
     handlePasteAction,
     handleStartCropImage,
+    handleSelectTool,
     toggleLeftPanel,
     toggleRightPanel,
   ]);
@@ -1901,7 +1845,7 @@ export default function App() {
       {/* 2. Top Tool Palette */}
       <Toolbar
         currentTool={currentTool}
-        onSelectTool={setCurrentTool}
+        onSelectTool={handleSelectTool}
         selectedShapeType={selectedShapeType}
         onSelectShapeType={setSelectedShapeType}
         primaryColor={primaryColor}
@@ -1937,7 +1881,6 @@ export default function App() {
           onCropCanvas={handleCropCanvas}
           onCutCanvasRegion={handleCutCanvasRegion}
           onCopyCanvasRegion={handleCopyCanvasRegion}
-          onPasteCanvasRegion={handlePasteCanvasRegion}
           onTriggerPaste={handlePasteAction}
           onMouseMoveCanvas={(pt) => {
             lastMouseCanvasPosRef.current = pt;
@@ -1954,6 +1897,8 @@ export default function App() {
           elements={elements}
           onAddElement={handleAddElement}
           onUpdateElement={handleUpdateElement}
+          onUpdateElements={handleUpdateElements}
+          onCommitHistory={handleCommitHistory}
           onDeleteElement={handleDeleteElement}
           activeLayerId={activeLayerId}
           selectedElementId={selectedElementId}
@@ -1962,7 +1907,7 @@ export default function App() {
           onSelectMultipleElements={handleSelectMultipleElements}
           onToggleSelectElement={handleToggleSelectElement}
           currentTool={currentTool}
-          onSelectTool={setCurrentTool}
+          onSelectTool={handleSelectTool}
           selectedShapeType={selectedShapeType}
           primaryColor={primaryColor}
           onPrimaryColorChange={handlePrimaryColorChange}
