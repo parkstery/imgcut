@@ -37,27 +37,26 @@ const INITIAL_CONFIG: CanvasConfig = {
 
 const INITIAL_LAYERS: Layer[] = [
   {
-    id: 'layer-bg',
-    name: '배경 (Background)',
-    visible: true,
-    locked: false,
-    opacity: 1,
-  },
-  {
-    id: 'layer-shapes',
-    name: '?�형 �?벡터 (Shapes)',
-    visible: true,
-    locked: false,
-    opacity: 1,
-  },
-  {
-    id: 'layer-text',
-    name: '?�스??& 브러??(Foreground)',
+    id: 'layer-1',
+    name: '레이어1',
     visible: true,
     locked: false,
     opacity: 1,
   },
 ];
+
+/** Next free name in 레이어1, 레이어2, … form */
+function nextLayerName(existing: Layer[]): string {
+  let max = 0;
+  for (const layer of existing) {
+    const m = /^레이어(\d+)$/.exec(layer.name.trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  let n = max + 1;
+  if (n < 1) n = 1;
+  while (existing.some((l) => l.name === `레이어${n}`)) n += 1;
+  return `레이어${n}`;
+}
 
 const INITIAL_ELEMENTS: CanvasElement[] = [];
 
@@ -65,7 +64,7 @@ export default function App() {
   // State
   const [config, setConfig] = useState<CanvasConfig>(INITIAL_CONFIG);
   const [layers, setLayers] = useState<Layer[]>(INITIAL_LAYERS);
-  const [activeLayerId, setActiveLayerId] = useState<string>(INITIAL_LAYERS[1].id);
+  const [activeLayerId, setActiveLayerId] = useState<string>(INITIAL_LAYERS[0].id);
   const [elements, setElements] = useState<CanvasElement[]>(INITIAL_ELEMENTS);
 
   // Multi-element selection state
@@ -173,7 +172,7 @@ export default function App() {
     {
       elements: INITIAL_ELEMENTS,
       layers: INITIAL_LAYERS,
-      activeLayerId: INITIAL_LAYERS[1].id,
+      activeLayerId: INITIAL_LAYERS[0].id,
       canvasConfig: INITIAL_CONFIG,
     },
   ]);
@@ -344,7 +343,7 @@ export default function App() {
 
   // Clear Canvas
   const handleClearCanvas = () => {
-    if (window.confirm('캔버?�의 모든 ?�소�?비우?�겠?�니�?')) {
+    if (window.confirm('캔버스의 모든 요소를 비우시겠습니까?')) {
       const nextElements: CanvasElement[] = [];
       setElements(nextElements);
       setSelectedElementIds([]);
@@ -584,7 +583,7 @@ export default function App() {
       setConfig(nextConfig);
       setElements(nextElements);
       pushHistory(nextElements, layers, nextConfig);
-      showToast(`캔버?��? ${nextConfig.width}×${nextConfig.height}px ?�기�??�라졌습?�다.`);
+      showToast(`캔버스가 ${nextConfig.width}×${nextConfig.height}px 크기로 잘렸습니다.`);
     },
     [config, elements, layers, pushHistory, showToast]
   );
@@ -717,10 +716,10 @@ export default function App() {
           }
         }
 
-        showToast('?�� 지?�한 ?�면 ?�역??캡쳐 복사?�었?�니?? (Ctrl+V�?붙여?�기)');
+        showToast('지정한 화면 영역을 캡쳐 복사했습니다. (Ctrl+V로 붙여넣기)');
       } catch (err) {
         console.error('Failed to capture region:', err);
-        showToast('?�역 캡쳐 �??�류가 발생?�습?�다.');
+        showToast('영역 캡쳐 중 오류가 발생했습니다.');
       }
     },
     [layers, elements, config, showToast]
@@ -740,10 +739,10 @@ export default function App() {
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText('').catch(() => {});
     }
-    showToast(`${selected.length}�?객체가 복사?�었?�니?? (Ctrl+V�?붙여?�기)`);
+    showToast(`${selected.length}개 객체가 복사되었습니다. (Ctrl+V로 붙여넣기)`);
   }, [elements, selectedElementIds, showToast]);
 
-  // Cut (?�려?�기/?�라?�기) Selected Canvas Elements (Ctrl+X)
+  // Cut (오려내기/잘라내기) Selected Canvas Elements (Ctrl+X)
   const handleCutSelectedElements = useCallback(() => {
     if (selectedElementIds.length === 0) return;
     const selected = elements.filter((el) => selectedElementIds.includes(el.id));
@@ -757,7 +756,7 @@ export default function App() {
       navigator.clipboard.writeText('').catch(() => {});
     }
     handleDeleteSelectedElements();
-    showToast(`${selected.length}�?객체�??�라?�습?�다. (Ctrl+V�?붙여?�기)`);
+    showToast(`${selected.length}개 객체를 잘라냈습니다. (Ctrl+V로 붙여넣기)`);
   }, [elements, selectedElementIds, handleDeleteSelectedElements, showToast]);
 
   // Copy Selected Region of an Image (Ctrl+C in crop mode)
@@ -815,7 +814,7 @@ export default function App() {
           }
         }
 
-        showToast('?�택???��?지 ?�역??복사?�었?�니?? (Ctrl+V�?붙여?�기)');
+        showToast('선택한 이미지 영역을 복사했습니다. (Ctrl+V로 붙여넣기)');
       };
       img.src = imgElem.src;
     },
@@ -985,7 +984,7 @@ export default function App() {
   const handleAddLayer = () => {
     const newLayer: Layer = {
       id: 'layer-' + Date.now(),
-      name: `?�이??${layers.length + 1}`,
+      name: nextLayerName(layers),
       visible: true,
       locked: false,
       opacity: 1,
@@ -1017,7 +1016,7 @@ export default function App() {
     const newLayer: Layer = {
       ...targetLayer,
       id: newLayerId,
-      name: `${targetLayer.name} (복사�?`,
+      name: nextLayerName(layers),
     };
 
     // Duplicate all elements belonging to this layer
@@ -1062,6 +1061,54 @@ export default function App() {
     }
   };
 
+  /** Bring element forward within its layer (drawn later = on top). */
+  const handleMoveElementForward = useCallback(
+    (elementId: string) => {
+      const idx = elements.findIndex((el) => el.id === elementId);
+      if (idx < 0) return;
+      const layerId = elements[idx].layerId;
+      let swapWith = -1;
+      for (let i = idx + 1; i < elements.length; i++) {
+        if (elements[i].layerId === layerId) {
+          swapWith = i;
+          break;
+        }
+      }
+      if (swapWith < 0) return;
+      const next = [...elements];
+      const temp = next[idx];
+      next[idx] = next[swapWith];
+      next[swapWith] = temp;
+      setElements(next);
+      pushHistory(next, layers, config);
+    },
+    [elements, layers, config, pushHistory]
+  );
+
+  /** Send element backward within its layer (drawn earlier = behind). */
+  const handleMoveElementBackward = useCallback(
+    (elementId: string) => {
+      const idx = elements.findIndex((el) => el.id === elementId);
+      if (idx < 0) return;
+      const layerId = elements[idx].layerId;
+      let swapWith = -1;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (elements[i].layerId === layerId) {
+          swapWith = i;
+          break;
+        }
+      }
+      if (swapWith < 0) return;
+      const next = [...elements];
+      const temp = next[idx];
+      next[idx] = next[swapWith];
+      next[swapWith] = temp;
+      setElements(next);
+      pushHistory(next, layers, config);
+    },
+    [elements, layers, config, pushHistory]
+  );
+
   const handleUpdateLayer = (updated: Layer) => {
     const next = layers.map((l) => (l.id === updated.id ? updated : l));
     setLayers(next);
@@ -1070,7 +1117,7 @@ export default function App() {
 
   // Insert Image from source URL or data URL
   const handleInsertImageSrc = useCallback(
-    (src: string, name = '붙여?��? ?��?지') => {
+    (src: string, name = '붙여넣은 이미지') => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -1141,7 +1188,7 @@ export default function App() {
       reader.onload = (e) => {
         const src = e.target?.result as string;
         if (src) {
-          handleInsertImageSrc(src, file.name || '?�입???��?지');
+          handleInsertImageSrc(src, file.name || '삽입한 이미지');
         }
       };
       reader.readAsDataURL(file);
@@ -1431,10 +1478,10 @@ export default function App() {
           setSelectedElementIds([]);
           pushHistory(data.elements, data.layers, data.config);
         } else {
-          alert('?�바�??�로?�트 JSON ?�일???�닙?�다.');
+          alert('올바른 프로젝트 JSON 파일이 아닙니다.');
         }
       } catch (err) {
-        alert('?�일??불러?�는 �??�류가 발생?�습?�다.');
+        alert('파일을 불러오는 중 오류가 발생했습니다.');
       }
     };
     reader.readAsText(file);
@@ -1866,6 +1913,8 @@ export default function App() {
           onDuplicateLayer={handleDuplicateLayer}
           onMoveLayerUp={handleMoveLayerUp}
           onMoveLayerDown={handleMoveLayerDown}
+          onMoveElementForward={handleMoveElementForward}
+          onMoveElementBackward={handleMoveElementBackward}
           onUpdateLayer={handleUpdateLayer}
           elements={elements}
           selectedElementId={selectedElementId}

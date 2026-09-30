@@ -7,7 +7,7 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Unlock,
+  LockOpen,
   Plus,
   Trash2,
   Copy,
@@ -33,6 +33,8 @@ interface LayersPanelProps {
   onDuplicateLayer: (layerId: string) => void;
   onMoveLayerUp: (layerId: string) => void;
   onMoveLayerDown: (layerId: string) => void;
+  onMoveElementForward?: (elementId: string) => void;
+  onMoveElementBackward?: (elementId: string) => void;
   onUpdateLayer: (updated: Layer) => void;
   elements: CanvasElement[];
   selectedElementId: string | null;
@@ -50,6 +52,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onDuplicateLayer,
   onMoveLayerUp,
   onMoveLayerDown,
+  onMoveElementForward,
+  onMoveElementBackward,
   onUpdateLayer,
   elements,
   selectedElementId,
@@ -61,6 +65,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [editingName, setEditingName] = useState('');
 
   const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0];
+  // layers[]: index 0 = backmost, last = frontmost. Panel lists reverse (top = front).
+  const activeLayerIndex = layers.findIndex((l) => l.id === activeLayerId);
+  const canMoveLayerUp =
+    activeLayerIndex >= 0 && activeLayerIndex < layers.length - 1;
+  const canMoveLayerDown = activeLayerIndex > 0;
 
   const handleStartRename = (layer: Layer) => {
     setEditingLayerId(layer.id);
@@ -129,6 +138,38 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           <span className="text-[10px] text-stone-400 font-normal">({layers.length})</span>
         </div>
         <div className="flex items-center space-x-0.5">
+          {/* Single reorder pair for the active (selected) layer */}
+          <button
+            id="btn-move-layer-up"
+            type="button"
+            onClick={() => onMoveLayerUp(activeLayerId)}
+            disabled={!canMoveLayerUp}
+            className={`p-1.5 rounded transition-colors ${
+              canMoveLayerUp
+                ? 'hover:bg-stone-800 text-stone-300 hover:text-white'
+                : 'text-stone-700 cursor-not-allowed'
+            }`}
+            title="선택한 레이어를 위로 (앞으로)"
+            aria-label="선택한 레이어를 위로 이동"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            id="btn-move-layer-down"
+            type="button"
+            onClick={() => onMoveLayerDown(activeLayerId)}
+            disabled={!canMoveLayerDown}
+            className={`p-1.5 rounded transition-colors ${
+              canMoveLayerDown
+                ? 'hover:bg-stone-800 text-stone-300 hover:text-white'
+                : 'text-stone-700 cursor-not-allowed'
+            }`}
+            title="선택한 레이어를 아래로 (뒤로)"
+            aria-label="선택한 레이어를 아래로 이동"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          <span className="w-px h-4 bg-stone-700 mx-0.5" aria-hidden />
           <button
             id="btn-add-layer"
             onClick={onAddLayer}
@@ -173,8 +214,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
       {/* Layer Stack (Rendered in reverse order: top layer on top) */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {[...layers].reverse().map((layer, reverseIndex) => {
-          const originalIndex = layers.length - 1 - reverseIndex;
+        {[...layers].reverse().map((layer) => {
           const isActive = layer.id === activeLayerId;
           const layerElements = elements.filter((el) => el.layerId === layer.id);
 
@@ -206,7 +246,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   {layer.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                 </button>
 
-                {/* Lock Toggle */}
+                {/* Lock Toggle — closed padlock when locked, open padlock when unlocked */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -216,8 +256,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     layer.locked ? 'text-amber-400' : 'text-stone-600 hover:text-stone-400'
                   }`}
                   title={layer.locked ? '레이어 잠금 해제' : '레이어 잠금'}
+                  aria-label={layer.locked ? '레이어 잠금 해제' : '레이어 잠금'}
                 >
-                  {layer.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  {layer.locked ? (
+                    <Lock className="w-3.5 h-3.5" strokeWidth={2} />
+                  ) : (
+                    <LockOpen className="w-3.5 h-3.5" strokeWidth={2} />
+                  )}
                 </button>
 
                 {/* Layer Name or Edit Input */}
@@ -258,52 +303,26 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   )}
                 </div>
 
-                {/* Reorder Up / Down */}
-                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveLayerUp(layer.id);
-                    }}
-                    disabled={originalIndex === layers.length - 1}
-                    className={`p-0.5 hover:text-white ${
-                      originalIndex === layers.length - 1 ? 'opacity-30 cursor-not-allowed' : ''
-                    }`}
-                    title="위로 이동"
-                  >
-                    <ChevronUp className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveLayerDown(layer.id);
-                    }}
-                    disabled={originalIndex === 0}
-                    className={`p-0.5 hover:text-white ${
-                      originalIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''
-                    }`}
-                    title="아래로 이동"
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartRename(layer);
-                    }}
-                    className="p-0.5 hover:text-amber-400 ml-0.5"
-                    title="이름 바꾸기"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStartRename(layer);
+                  }}
+                  className="p-0.5 rounded hover:bg-stone-700/60 hover:text-amber-400 shrink-0 text-stone-500"
+                  title="이름 바꾸기"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
               </div>
 
-              {/* Elements within active layer */}
+              {/* Elements within active layer (front-most first) */}
               {isActive && layerElements.length > 0 && (
                 <div className="px-2 pb-2 pt-0.5 space-y-0.5">
-                  {layerElements.map((el) => {
+                  {[...layerElements].reverse().map((el, revIdx) => {
                     const isSelected = el.id === selectedElementId;
+                    const isFrontmost = revIdx === 0;
+                    const isBackmost = revIdx === layerElements.length - 1;
                     return (
                       <div
                         key={el.id}
@@ -311,16 +330,46 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                           e.stopPropagation();
                           onSelectElement(el.id);
                         }}
-                        className={`flex items-center space-x-1.5 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors ${
+                        className={`flex items-center space-x-1 px-1.5 py-1 rounded text-[11px] cursor-pointer transition-colors ${
                           isSelected
                             ? 'bg-amber-500/20 text-amber-300 font-medium'
                             : 'hover:bg-stone-700/50 text-stone-400 hover:text-stone-200'
                         }`}
                       >
                         {getElementIcon(el.type)}
-                        <span className="truncate flex-1">
+                        <span className="truncate flex-1 min-w-0">
                           {el.name || (el.type === 'shape' ? (el as any).shapeType : el.type)}
                         </span>
+                        <div className="flex items-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMoveElementForward?.(el.id);
+                            }}
+                            disabled={isFrontmost || !onMoveElementForward}
+                            className={`p-0.5 rounded hover:bg-stone-600/60 ${
+                              isFrontmost ? 'opacity-30 cursor-not-allowed' : 'text-stone-400 hover:text-white'
+                            }`}
+                            title="개체를 앞으로"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMoveElementBackward?.(el.id);
+                            }}
+                            disabled={isBackmost || !onMoveElementBackward}
+                            className={`p-0.5 rounded hover:bg-stone-600/60 ${
+                              isBackmost ? 'opacity-30 cursor-not-allowed' : 'text-stone-400 hover:text-white'
+                            }`}
+                            title="개체를 뒤로"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
