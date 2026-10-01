@@ -73,8 +73,8 @@ export default function App() {
 
   // Persistent shape styling (Feature 5: applied to subsequent shapes)
   const [lastShapeStyle, setLastShapeStyle] = useState<ShapeStylePreset>({
-    fill: '#4F46E5',
-    stroke: '#4F46E5',
+    fill: 'none',
+    stroke: '#FF0000',
     strokeWidth: 2,
     strokeDash: 'solid',
     cornerRadius: 16,
@@ -84,7 +84,7 @@ export default function App() {
   // Tool & styling state
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const [selectedShapeType, setSelectedShapeType] = useState<ShapeType>('rounded-rect');
-  const [primaryColor, setPrimaryColor] = useState<string>('#4F46E5');
+  const [primaryColor, setPrimaryColor] = useState<string>('#FF0000');
   const [strokeWidth, setStrokeWidth] = useState<number>(2);
   const [zoom, setZoom] = useState<number>(0.9);
 

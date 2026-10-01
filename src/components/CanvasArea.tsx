@@ -1466,12 +1466,15 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           height: config.snapToGrid ? snapValue(previewRect.h) : previewRect.h,
           rotation: 0,
           opacity: lastShapeStyle.opacity ?? 1,
-          fill: lastShapeStyle.fill || primaryColor,
+          fill:
+            lastShapeStyle.fill === 'none' || lastShapeStyle.fill
+              ? lastShapeStyle.fill || 'none'
+              : 'none',
           gradient: lastShapeStyle.gradient?.enabled ? lastShapeStyle.gradient : undefined,
           stroke:
             lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
               ? lastShapeStyle.stroke
-              : primaryColor || '#000000',
+              : primaryColor || '#FF0000',
           strokeWidth: lastShapeStyle.strokeWidth ?? (strokeWidth > 0 ? strokeWidth : 2),
           strokeDash: lastShapeStyle.strokeDash || 'solid',
           cornerRadius: lastShapeStyle.cornerRadius ?? 16,
@@ -2515,8 +2518,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             <g transform={`translate(${previewRect.x}, ${previewRect.y})`}>
               <path
                 d={getShapePath(selectedShapeType, previewRect.w, previewRect.h)}
-                fill={lastShapeStyle.fill || primaryColor}
-                stroke={lastShapeStyle.stroke || '#000000'}
+                fill={
+                  lastShapeStyle.fill === 'none' || lastShapeStyle.fill
+                    ? lastShapeStyle.fill || 'none'
+                    : 'none'
+                }
+                stroke={
+                  lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none'
+                    ? lastShapeStyle.stroke
+                    : primaryColor || '#FF0000'
+                }
                 strokeWidth={lastShapeStyle.strokeWidth || strokeWidth || 1}
                 opacity={0.8}
                 strokeDasharray="4 4"
