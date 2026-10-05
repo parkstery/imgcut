@@ -71,6 +71,26 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     activeLayerIndex >= 0 && activeLayerIndex < layers.length - 1;
   const canMoveLayerDown = activeLayerIndex > 0;
 
+  // Selected object's z-order within its layer (array index 0 = back, last = front)
+  const selectedElement = selectedElementId
+    ? elements.find((el) => el.id === selectedElementId) || null
+    : null;
+  const siblingElements = selectedElement
+    ? elements.filter((el) => el.layerId === selectedElement.layerId)
+    : [];
+  const selectedSiblingIndex = selectedElement
+    ? siblingElements.findIndex((el) => el.id === selectedElement.id)
+    : -1;
+  const canMoveElementUp =
+    !!selectedElement &&
+    !!onMoveElementForward &&
+    selectedSiblingIndex >= 0 &&
+    selectedSiblingIndex < siblingElements.length - 1;
+  const canMoveElementDown =
+    !!selectedElement &&
+    !!onMoveElementBackward &&
+    selectedSiblingIndex > 0;
+
   const handleStartRename = (layer: Layer) => {
     setEditingLayerId(layer.id);
     setEditingName(layer.name);
@@ -122,7 +142,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         </span>
 
         <span className="text-[11px] text-stone-400 group-hover:text-stone-200 font-medium tracking-wider mt-4 [writing-mode:vertical-lr]">
-          레이어 목록
+          Layer
         </span>
       </aside>
     );
@@ -130,14 +150,27 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   return (
     <aside className="w-64 bg-stone-900 border-r border-stone-800 text-stone-200 flex flex-col shrink-0 select-none text-xs">
-      {/* Header & Controls */}
-      <div className="p-3 border-b border-stone-800 flex items-center justify-between">
-        <div className="flex items-center space-x-1.5 font-semibold text-stone-100">
-          <Layers className="w-4 h-4 text-amber-400" />
-          <span>레이어 관리</span>
+      {/* Title row — always a single horizontal line */}
+      <div className="px-3 pt-3 pb-1.5 border-b border-stone-800/80 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0 font-semibold text-stone-100 whitespace-nowrap">
+          <Layers className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="text-sm tracking-wide">Layer</span>
           <span className="text-[10px] text-stone-400 font-normal">({layers.length})</span>
         </div>
-        <div className="flex items-center space-x-0.5">
+        {onToggleCollapse && (
+          <button
+            id="btn-collapse-layers"
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 transition-colors shrink-0"
+            title="레이어 패널 접기 (단축키: [)"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5 text-orange-400" />
+          </button>
+        )}
+      </div>
+
+      {/* Action controls on their own row so the title never wraps vertically */}
+      <div className="px-2 py-1.5 border-b border-stone-800 flex items-center justify-end flex-wrap gap-0.5 shrink-0">
           {/* Single reorder pair for the active (selected) layer */}
           <button
             id="btn-move-layer-up"
@@ -166,6 +199,42 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             }`}
             title="선택한 레이어를 아래로 (뒤로)"
             aria-label="선택한 레이어를 아래로 이동"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          <span className="w-px h-4 bg-stone-700 mx-0.5" aria-hidden title="레이어 / 개체" />
+          {/* Single reorder pair for the selected object within its layer */}
+          <button
+            id="btn-move-element-up"
+            type="button"
+            onClick={() => {
+              if (selectedElementId) onMoveElementForward?.(selectedElementId);
+            }}
+            disabled={!canMoveElementUp}
+            className={`p-1.5 rounded transition-colors ${
+              canMoveElementUp
+                ? 'hover:bg-stone-800 text-amber-400 hover:text-amber-300'
+                : 'text-stone-700 cursor-not-allowed'
+            }`}
+            title="선택한 개체를 위로 (앞으로)"
+            aria-label="선택한 개체를 위로 이동"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            id="btn-move-element-down"
+            type="button"
+            onClick={() => {
+              if (selectedElementId) onMoveElementBackward?.(selectedElementId);
+            }}
+            disabled={!canMoveElementDown}
+            className={`p-1.5 rounded transition-colors ${
+              canMoveElementDown
+                ? 'hover:bg-stone-800 text-amber-400 hover:text-amber-300'
+                : 'text-stone-700 cursor-not-allowed'
+            }`}
+            title="선택한 개체를 아래로 (뒤로)"
+            aria-label="선택한 개체를 아래로 이동"
           >
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
@@ -199,17 +268,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
-          {onToggleCollapse && (
-            <button
-              id="btn-collapse-layers"
-              onClick={onToggleCollapse}
-              className="p-1.5 rounded hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 transition-colors ml-1 border-l border-stone-800"
-              title="레이어 패널 접기 (단축키: [)"
-            >
-              <PanelLeftClose className="w-3.5 h-3.5 text-orange-400" />
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Layer Stack (Rendered in reverse order: top layer on top) */}
@@ -316,13 +374,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 </button>
               </div>
 
-              {/* Elements within active layer (front-most first) */}
+              {/* Elements within active layer (front-most first); reorder via header ↑↓ */}
               {isActive && layerElements.length > 0 && (
                 <div className="px-2 pb-2 pt-0.5 space-y-0.5">
-                  {[...layerElements].reverse().map((el, revIdx) => {
+                  {[...layerElements].reverse().map((el) => {
                     const isSelected = el.id === selectedElementId;
-                    const isFrontmost = revIdx === 0;
-                    const isBackmost = revIdx === layerElements.length - 1;
                     return (
                       <div
                         key={el.id}
@@ -330,7 +386,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                           e.stopPropagation();
                           onSelectElement(el.id);
                         }}
-                        className={`flex items-center space-x-1 px-1.5 py-1 rounded text-[11px] cursor-pointer transition-colors ${
+                        className={`flex items-center space-x-1.5 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors ${
                           isSelected
                             ? 'bg-amber-500/20 text-amber-300 font-medium'
                             : 'hover:bg-stone-700/50 text-stone-400 hover:text-stone-200'
@@ -340,36 +396,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                         <span className="truncate flex-1 min-w-0">
                           {el.name || (el.type === 'shape' ? (el as any).shapeType : el.type)}
                         </span>
-                        <div className="flex items-center shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMoveElementForward?.(el.id);
-                            }}
-                            disabled={isFrontmost || !onMoveElementForward}
-                            className={`p-0.5 rounded hover:bg-stone-600/60 ${
-                              isFrontmost ? 'opacity-30 cursor-not-allowed' : 'text-stone-400 hover:text-white'
-                            }`}
-                            title="개체를 앞으로"
-                          >
-                            <ChevronUp className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMoveElementBackward?.(el.id);
-                            }}
-                            disabled={isBackmost || !onMoveElementBackward}
-                            className={`p-0.5 rounded hover:bg-stone-600/60 ${
-                              isBackmost ? 'opacity-30 cursor-not-allowed' : 'text-stone-400 hover:text-white'
-                            }`}
-                            title="개체를 뒤로"
-                          >
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                        </div>
                       </div>
                     );
                   })}

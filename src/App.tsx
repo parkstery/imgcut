@@ -60,6 +60,9 @@ function nextLayerName(existing: Layer[]): string {
 
 const INITIAL_ELEMENTS: CanvasElement[] = [];
 
+/** Offset when pasting / duplicating objects (right + down) */
+const PASTE_OFFSET_PX = 10;
+
 export default function App() {
   // State
   const [config, setConfig] = useState<CanvasConfig>(INITIAL_CONFIG);
@@ -115,6 +118,12 @@ export default function App() {
 
   // PowerPoint-style Image Cropping State
   const [croppingImageId, setCroppingImageId] = useState<string | null>(null);
+  const [activeImgCropBox, setActiveImgCropBox] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const activeImgCropBoxRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
   // Canvas-wide Crop Box State (for Screen/Canvas Region Capture)
@@ -146,6 +155,8 @@ export default function App() {
 
   const handleFinishCropImage = useCallback(() => {
     setCroppingImageId(null);
+    setActiveImgCropBox(null);
+    activeImgCropBoxRef.current = null;
   }, []);
 
   // Switching tools: canvas crop must not keep selection/transform active
@@ -153,8 +164,12 @@ export default function App() {
     if (tool === 'crop') {
       setSelectedElementIds([]);
       setCroppingImageId(null);
+      setActiveImgCropBox(null);
+      activeImgCropBoxRef.current = null;
     } else if (tool !== 'select' && croppingImageId) {
       setCroppingImageId(null);
+      setActiveImgCropBox(null);
+      activeImgCropBoxRef.current = null;
     }
     setCurrentTool(tool);
   }, [croppingImageId]);
@@ -400,6 +415,7 @@ export default function App() {
         }));
       } else if (newElem.type === 'text') {
         setPrimaryColor(newElem.color);
+        setSelectedElementIds([newElem.id]);
         setLastShapeStyle((prev) => ({
           ...prev,
           fill: newElem.color,
@@ -498,6 +514,40 @@ export default function App() {
     pushHistory(elementsRef.current, layers, config);
   }, [layers, config, pushHistory]);
 
+  /** Keep only the selected crop region (남기기) — same as canvas crop toolbar Enter */
+  const handleApplyCropImage = useCallback(async () => {
+    const crop = activeImgCropBoxRef.current || activeImgCropBox;
+    if (!croppingImageId || !crop || crop.w < 10 || crop.h < 10) return;
+    const imgElem = elements.find(
+      (el) => el.id === croppingImageId && el.type === 'image'
+    ) as ImageElement | undefined;
+    if (!imgElem) return;
+    try {
+      const slice = await extractImageSlice(imgElem, crop);
+      handleUpdateElement({
+        ...imgElem,
+        src: slice.src,
+        x: Math.round(imgElem.x + crop.x),
+        y: Math.round(imgElem.y + crop.y),
+        width: Math.round(crop.w),
+        height: Math.round(crop.h),
+        naturalWidth: slice.naturalWidth,
+        naturalHeight: slice.naturalHeight,
+      });
+      handleFinishCropImage();
+    } catch (err) {
+      console.error('Failed to apply image crop:', err);
+      showToast('그림 자르기 적용 중 오류가 발생했습니다.');
+    }
+  }, [
+    croppingImageId,
+    activeImgCropBox,
+    elements,
+    handleUpdateElement,
+    handleFinishCropImage,
+    showToast,
+  ]);
+
   // Delete Element (single or multiple)
   const handleDeleteElement = useCallback(
     (id: string) => {
@@ -523,8 +573,8 @@ export default function App() {
       const dup: CanvasElement = {
         ...el,
         id: `${el.type}-${Date.now()}`,
-        x: el.x + 20,
-        y: el.y + 20,
+        x: el.x + PASTE_OFFSET_PX,
+        y: el.y + PASTE_OFFSET_PX,
         name: `${el.name || el.type} (복제)`,
       };
       const next = [...elements, dup];
@@ -541,8 +591,8 @@ export default function App() {
     const newItems: CanvasElement[] = toDuplicate.map((el, i) => ({
       ...el,
       id: `${el.type}-${Date.now()}-${i}`,
-      x: el.x + 24,
-      y: el.y + 24,
+      x: el.x + PASTE_OFFSET_PX,
+      y: el.y + PASTE_OFFSET_PX,
       name: `${el.name || el.type} (복제)`,
     }));
     const next = [...elements, ...newItems];
@@ -616,8 +666,8 @@ export default function App() {
             height: sliceH,
             naturalWidth: sliceW,
             naturalHeight: sliceH,
-            suggestedX: sliceX + 24,
-            suggestedY: sliceY + 24,
+            suggestedX: sliceX + PASTE_OFFSET_PX,
+            suggestedY: sliceY + PASTE_OFFSET_PX,
           },
         };
 
@@ -701,8 +751,8 @@ export default function App() {
             height: Math.round(region.h),
             naturalWidth: Math.round(region.w),
             naturalHeight: Math.round(region.h),
-            suggestedX: Math.round(region.x + 24),
-            suggestedY: Math.round(region.y + 24),
+            suggestedX: Math.round(region.x + PASTE_OFFSET_PX),
+            suggestedY: Math.round(region.y + PASTE_OFFSET_PX),
           },
         };
 
@@ -763,60 +813,37 @@ export default function App() {
   const handleCopyImagePart = useCallback(
     async (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => {
       if (crop.w < 5 || crop.h < 5) return;
-      const naturalW = imgElem.naturalWidth || imgElem.width;
-      const naturalH = imgElem.naturalHeight || imgElem.height;
-      const scaleX = naturalW / imgElem.width;
-      const scaleY = naturalH / imgElem.height;
-
-      const sx = Math.max(0, crop.x * scaleX);
-      const sy = Math.max(0, crop.y * scaleY);
-      const sw = Math.min(naturalW - sx, crop.w * scaleX);
-      const sh = Math.min(naturalH - sy, crop.h * scaleY);
-
-      if (sw < 1 || sh < 1) return;
-
-      const offCanvas = document.createElement('canvas');
-      offCanvas.width = Math.round(sw);
-      offCanvas.height = Math.round(sh);
-      const ctx = offCanvas.getContext('2d');
-      if (!ctx) return;
-
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-        const croppedSrc = offCanvas.toDataURL('image/png');
+      try {
+        const slice = await extractImageSlice(imgElem, crop);
 
         internalClipboardRef.current = {
           type: 'image-slice',
           imageSlice: {
-            src: croppedSrc,
+            src: slice.src,
             width: Math.round(crop.w),
             height: Math.round(crop.h),
-            naturalWidth: Math.round(sw),
-            naturalHeight: Math.round(sh),
-            suggestedX: Math.round(imgElem.x + crop.x + 24),
-            suggestedY: Math.round(imgElem.y + crop.y + 24),
+            naturalWidth: slice.naturalWidth,
+            naturalHeight: slice.naturalHeight,
+            suggestedX: Math.round(imgElem.x + crop.x + PASTE_OFFSET_PX),
+            suggestedY: Math.round(imgElem.y + crop.y + PASTE_OFFSET_PX),
           },
         };
 
         if (navigator.clipboard && window.ClipboardItem) {
           try {
-            offCanvas.toBlob((blob) => {
-              if (blob) {
-                navigator.clipboard.write([
-                  new ClipboardItem({ 'image/png': blob }),
-                ]).catch(() => {});
-              }
-            }, 'image/png');
+            const res = await fetch(slice.src);
+            const blob = await res.blob();
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
           } catch (e) {
             console.warn('System clipboard write warning:', e);
           }
         }
 
         showToast('선택한 이미지 영역을 복사했습니다. (Ctrl+V로 붙여넣기)');
-      };
-      img.src = imgElem.src;
+      } catch (err) {
+        console.error('Failed to copy image part:', err);
+        showToast('이미지 복사 중 오류가 발생했습니다.');
+      }
     },
     [showToast]
   );
@@ -845,8 +872,8 @@ export default function App() {
             height: pieceH,
             naturalWidth: slice.naturalWidth,
             naturalHeight: slice.naturalHeight,
-            suggestedX: pieceX + 24,
-            suggestedY: pieceY + 24,
+            suggestedX: pieceX + PASTE_OFFSET_PX,
+            suggestedY: pieceY + PASTE_OFFSET_PX,
           },
         };
 
@@ -1204,17 +1231,9 @@ export default function App() {
 
     if (clip.type === 'image-slice' && clip.imageSlice) {
       const slice = clip.imageSlice;
-      let targetX = slice.suggestedX ?? 50;
-      let targetY = slice.suggestedY ?? 50;
-
-      if (lastMouseCanvasPosRef.current) {
-        const mx = lastMouseCanvasPosRef.current.x;
-        const my = lastMouseCanvasPosRef.current.y;
-        if (mx >= 0 && mx <= config.width && my >= 0 && my <= config.height) {
-          targetX = Math.round(mx - slice.width / 2);
-          targetY = Math.round(my - slice.height / 2);
-        }
-      }
+      // Crop/cut slices paste at origin + offset (not under the mouse)
+      const targetX = slice.suggestedX ?? 50;
+      const targetY = slice.suggestedY ?? 50;
 
       const newImg: ImageElement = {
         id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1241,8 +1260,8 @@ export default function App() {
           invert: 0,
         },
       };
-      slice.suggestedX = (slice.suggestedX ?? 50) + 24;
-      slice.suggestedY = (slice.suggestedY ?? 50) + 24;
+      slice.suggestedX = targetX + PASTE_OFFSET_PX;
+      slice.suggestedY = targetY + PASTE_OFFSET_PX;
 
       setElements((prev) => {
         const next = [...prev, newImg];
@@ -1258,8 +1277,8 @@ export default function App() {
     if (clip.type === 'elements' && clip.elements) {
       const cloned = clip.elements.map((el, i) => {
         const newId = `${el.type}-${Date.now()}-${i}`;
-        const nextX = el.x + 24;
-        const nextY = el.y + 24;
+        const nextX = el.x + PASTE_OFFSET_PX;
+        const nextY = el.y + PASTE_OFFSET_PX;
         if (el.type === 'brush' && el.points) {
           return {
             ...el,
@@ -1267,7 +1286,10 @@ export default function App() {
             layerId: activeLayerId,
             x: nextX,
             y: nextY,
-            points: el.points.map((p) => ({ x: p.x + 24, y: p.y + 24 })),
+            points: el.points.map((p) => ({
+              x: p.x + PASTE_OFFSET_PX,
+              y: p.y + PASTE_OFFSET_PX,
+            })),
           };
         }
         return {
@@ -1332,12 +1354,13 @@ export default function App() {
     return false;
   }, [handleInsertImage, handleInsertImageSrc]);
 
-  // Unified Paste: OS clipboard image first, then app internal clipboard
+  // Unified Paste: app internal clipboard first (crop slice keeps origin+10px),
+  // then OS clipboard (screenshots, etc.)
   const handlePasteAction = useCallback(async () => {
+    if (pasteFromInternalClipboard()) return;
+
     const fromSystem = await handlePasteFromClipboard();
     if (fromSystem) return;
-
-    if (pasteFromInternalClipboard()) return;
 
     setIsClipboardGuideOpen(true);
   }, [handlePasteFromClipboard, pasteFromInternalClipboard]);
@@ -1388,20 +1411,21 @@ export default function App() {
       const clipboardData = e.clipboardData;
       if (!clipboardData) return;
 
-      // 1) Windows / OS clipboard image (Snipping Tool, Win+Shift+S, Explorer copy, etc.)
+      // 1) App-internal cut/copy first — crop slices use origin + 10px offset
+      //    (crop also writes PNG to OS clipboard; without this, OS paste wins and loses position)
+      if (internalClipboardRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        pasteFromInternalClipboard();
+        return;
+      }
+
+      // 2) Windows / OS clipboard image (Snipping Tool, Win+Shift+S, Explorer copy, etc.)
       const imageFile = extractImageFileFromClipboard(clipboardData);
       if (imageFile) {
         e.preventDefault();
         e.stopPropagation();
         handleInsertImage(imageFile);
-        return;
-      }
-
-      // 2) App-internal cut/copy (shapes, slices) when OS clipboard has no image
-      if (internalClipboardRef.current) {
-        e.preventDefault();
-        e.stopPropagation();
-        pasteFromInternalClipboard();
         return;
       }
 
@@ -1937,9 +1961,11 @@ export default function App() {
           onCopyImagePart={handleCopyImagePart}
           onCutImagePart={handleCutImagePart}
           onCropBoxChange={(box) => {
-            activeCanvasCropBoxRef.current = box;
             if (croppingImageId) {
               activeImgCropBoxRef.current = box;
+              setActiveImgCropBox(box);
+            } else {
+              activeCanvasCropBoxRef.current = box;
             }
           }}
           layers={layers}
@@ -1987,10 +2013,11 @@ export default function App() {
           onToggleCollapse={toggleRightPanel}
           croppingImageId={croppingImageId}
           onStartCropImage={handleStartCropImage}
+          onApplyCropImage={handleApplyCropImage}
           onCancelCropImage={handleFinishCropImage}
           onCutImagePart={handleCutImagePart}
           onCopyImagePart={handleCopyImagePart}
-          activeCropBox={activeImgCropBoxRef.current}
+          activeCropBox={activeImgCropBox}
         />
       </div>
 

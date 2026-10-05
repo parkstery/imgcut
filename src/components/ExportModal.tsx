@@ -8,6 +8,18 @@ import { generateSVGString, downloadSVGFile } from '../utils/svgExport';
 import { exportToRaster, downloadDataUrl } from '../utils/rasterExport';
 import { X, Download, FileCode, Image as ImageIcon, Sparkles } from 'lucide-react';
 
+/** Export basename: im-YYMMDD-HHMMSS (e.g. im-261005-064530) */
+function makeExportFilename(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yy = pad(date.getFullYear() % 100);
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mi = pad(date.getMinutes());
+  const ss = pad(date.getSeconds());
+  return `im-${yy}${mm}${dd}-${hh}${mi}${ss}`;
+}
+
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -23,12 +35,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   elements,
   config,
 }) => {
-  const [format, setFormat] = useState<'svg' | 'png' | 'jpeg'>('svg');
+  const [format, setFormat] = useState<'svg' | 'png' | 'jpeg'>('png');
   const [scale, setScale] = useState<number>(1);
   const [transparent, setTransparent] = useState<boolean>(false);
-  const [filename, setFilename] = useState<string>('imgman-drawing');
+  const [filename, setFilename] = useState<string>(() => makeExportFilename());
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+
+  // Reset format + timestamped filename whenever the export dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setFormat('png');
+      setFilename(makeExportFilename());
+    }
+  }, [isOpen]);
 
   // Generate a live preview when modal opens or settings change
   useEffect(() => {
@@ -64,7 +84,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleDownload = async () => {
     setIsGenerating(true);
     try {
-      const baseName = filename.trim() || 'drawing';
+      const baseName = filename.trim() || makeExportFilename();
       if (format === 'svg') {
         const svgStr = generateSVGString(layers, elements, config, transparent);
         downloadSVGFile(svgStr, `${baseName}.svg`);
@@ -122,18 +142,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <label className="text-stone-300 font-medium block mb-2">포맷 선택</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => setFormat('svg')}
-                  className={`p-2.5 rounded-lg border text-center transition-all ${
-                    format === 'svg'
-                      ? 'border-amber-500 bg-amber-500/10 text-amber-300 font-bold ring-1 ring-amber-500/40'
-                      : 'border-stone-800 hover:border-stone-700 text-stone-400'
-                  }`}
-                >
-                  <FileCode className="w-4 h-4 mx-auto mb-1 text-amber-400" />
-                  <span>SVG (벡터)</span>
-                </button>
-
-                <button
                   onClick={() => setFormat('png')}
                   className={`p-2.5 rounded-lg border text-center transition-all ${
                     format === 'png'
@@ -155,6 +163,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 >
                   <ImageIcon className="w-4 h-4 mx-auto mb-1 text-blue-400" />
                   <span>JPEG (사진)</span>
+                </button>
+
+                <button
+                  onClick={() => setFormat('svg')}
+                  className={`p-2.5 rounded-lg border text-center transition-all ${
+                    format === 'svg'
+                      ? 'border-amber-500 bg-amber-500/10 text-amber-300 font-bold ring-1 ring-amber-500/40'
+                      : 'border-stone-800 hover:border-stone-700 text-stone-400'
+                  }`}
+                >
+                  <FileCode className="w-4 h-4 mx-auto mb-1 text-amber-400" />
+                  <span>SVG (벡터)</span>
                 </button>
               </div>
             </div>

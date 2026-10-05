@@ -29,8 +29,8 @@ import {
   PanelRightOpen,
   Crop,
   Scissors,
-  Square,
-  Circle,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 
 /** Visual property section card with clear title bar */
@@ -352,45 +352,55 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         headerRight={<NudgeKeyHint />}
       >
         <div className="grid grid-cols-2 gap-2">
-          <div>
-            <span className="text-[10px] text-stone-500 block mb-0.5">X 좌표</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] text-stone-500 shrink-0 w-10">X</span>
             <input
               type="number"
               value={Math.round(selectedElement.x)}
               onChange={(e) =>
                 onUpdateElement({ ...selectedElement, x: parseFloat(e.target.value) || 0 })
               }
-              className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+              className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
-          <div>
-            <span className="text-[10px] text-stone-500 block mb-0.5">Y 좌표</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] text-stone-500 shrink-0 w-10">Y</span>
             <input
               type="number"
               value={Math.round(selectedElement.y)}
               onChange={(e) =>
                 onUpdateElement({ ...selectedElement, y: parseFloat(e.target.value) || 0 })
               }
-              className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+              className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
-          <div>
-            <span className="text-[10px] text-stone-500 block mb-0.5">
-              {isStraightLine ? '길이 (Length)' : '너비 (W)'}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] text-stone-500 shrink-0 w-10">
+              {isStraightLine ? '길이' : 'W'}
             </span>
             <input
               type="number"
               value={Math.round(selectedElement.width)}
               min="5"
-              onChange={(e) =>
-                onUpdateElement({ ...selectedElement, width: Math.max(5, parseFloat(e.target.value) || 10) })
-              }
-              className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+              onChange={(e) => {
+                const w = Math.max(5, parseFloat(e.target.value) || 10);
+                if (isImage && img?.lockAspectRatio && selectedElement.height > 0) {
+                  const ratio = selectedElement.width / selectedElement.height;
+                  onUpdateElement({
+                    ...img,
+                    width: w,
+                    height: Math.max(5, Math.round(w / ratio)),
+                  });
+                } else {
+                  onUpdateElement({ ...selectedElement, width: w });
+                }
+              }}
+              className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
           {isStraightLine ? (
-            <div>
-              <span className="text-[10px] text-stone-500 block mb-0.5">선 두께 (굵기)</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[10px] text-stone-500 shrink-0 w-10">굵기</span>
               <input
                 type="number"
                 value={shape?.strokeWidth || 2}
@@ -404,24 +414,53 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     height: Math.max(sw * 4, 16),
                   });
                 }}
-                className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+                className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
               />
             </div>
           ) : (
-            <div>
-              <span className="text-[10px] text-stone-500 block mb-0.5">높이 (H)</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[10px] text-stone-500 shrink-0 w-10">H</span>
               <input
                 type="number"
                 value={Math.round(selectedElement.height)}
                 min="5"
-                onChange={(e) =>
-                  onUpdateElement({ ...selectedElement, height: Math.max(5, parseFloat(e.target.value) || 10) })
-                }
-                className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+                onChange={(e) => {
+                  const h = Math.max(5, parseFloat(e.target.value) || 10);
+                  if (isImage && img?.lockAspectRatio && selectedElement.width > 0) {
+                    const ratio = selectedElement.width / selectedElement.height;
+                    onUpdateElement({
+                      ...img,
+                      height: h,
+                      width: Math.max(5, Math.round(h * ratio)),
+                    });
+                  } else {
+                    onUpdateElement({ ...selectedElement, height: h });
+                  }
+                }}
+                className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
               />
             </div>
           )}
         </div>
+
+        {isImage && img && (
+          <label className="flex items-center gap-2 pt-0.5 cursor-pointer select-none text-[11px] text-stone-300">
+            <input
+              type="checkbox"
+              checked={!!img.lockAspectRatio}
+              onChange={(e) =>
+                onUpdateElement({ ...img, lockAspectRatio: e.target.checked })
+              }
+              className="accent-amber-500 w-3.5 h-3.5"
+            />
+            {img.lockAspectRatio ? (
+              <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+            ) : (
+              <LockOpen className="w-3 h-3 text-stone-500 shrink-0" />
+            )}
+            <span>비율 고정 (Lock)</span>
+          </label>
+        )}
 
         {/* Rotation */}
         <div className="flex items-center space-x-2 pt-0.5">
@@ -869,8 +908,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <textarea
               value={text.text}
               onChange={(e) => onUpdateElement({ ...text, text: e.target.value })}
-              rows={3}
-              className="w-full bg-stone-800 border border-stone-700 rounded p-2 text-stone-100 text-xs focus:border-amber-500"
+              rows={2}
+              className="w-full h-14 max-h-24 min-h-[2.25rem] resize-y bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-stone-100 text-xs leading-snug focus:border-amber-500 outline-none"
             />
           </div>
 
@@ -979,82 +1018,67 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       {/* IMAGE SPECIFIC PROPERTIES: Crop, Border, Corner Radius, Flip, Filters */}
       {isImage && img && (
         <div className="space-y-4 pt-3 border-t border-stone-800">
-          {/* 1. PowerPoint-style Image Crop Section */}
-          <div className="bg-stone-850 border border-stone-750 rounded-lg p-3 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-stone-200 font-semibold text-xs flex items-center space-x-1.5">
-                <Crop className="w-4 h-4 text-amber-400" />
-                <span>그림 자르기 (Picture Crop)</span>
-              </label>
-              {croppingImageId === img.id && (
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-medium animate-pulse">
-                  자르기 진행 중
-                </span>
-              )}
-            </div>
-
+          {/* 1. Picture Crop — compact controls only */}
+          <div className="space-y-1.5">
             {croppingImageId === img.id ? (
-              <div className="space-y-2 pt-1">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCutImagePart && activeCropBox) {
-                        onCutImagePart(img, activeCropBox);
-                      }
-                    }}
-                    className="py-1.5 px-2 bg-red-600/20 hover:bg-red-600/30 text-red-300 hover:text-red-200 border border-red-500/30 text-xs font-semibold rounded transition-colors flex items-center justify-center space-x-1"
-                    title="선택 영역을 오려내어 클립보드에 저장하고 원본에서 비웁니다 (Ctrl+X)"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                    <span>오려내기 (Ctrl+X)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCopyImagePart && activeCropBox) {
-                        onCopyImagePart(img, activeCropBox);
-                      }
-                    }}
-                    className="py-1.5 px-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/30 text-xs font-semibold rounded transition-colors flex items-center justify-center space-x-1"
-                    title="선택 영역을 클립보드에 복사합니다 (Ctrl+C)"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>복사 (Ctrl+C)</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center space-x-1.5">
-                  <button
-                    onClick={onApplyCropImage}
-                    className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded shadow transition-colors flex items-center justify-center space-x-1"
-                  >
-                    <span>✓ 남기기 완료 (Enter)</span>
-                  </button>
-                  <button
-                    onClick={onCancelCropImage}
-                    className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs rounded transition-colors"
-                  >
-                    ✕ 취소 (Esc)
-                  </button>
-                </div>
-                <p className="text-[11px] text-stone-400 leading-tight">
-                  캔버스 위의 자르기 핸들로 영역을 지정한 후, <span className="text-red-300 font-medium">오려내기</span>(Ctrl+X) 또는 <span className="text-sky-300 font-medium">복사</span>(Ctrl+C)하여 원하는 곳에 붙여넣을 수 있습니다.
-                </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const crop =
+                      activeCropBox && activeCropBox.w >= 5
+                        ? activeCropBox
+                        : { x: 0, y: 0, w: img.width, h: img.height };
+                    onCutImagePart?.(img, crop);
+                  }}
+                  className="py-1.5 px-2 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1"
+                  title="오려내기 (Ctrl+X)"
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  <span>오려내기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const crop =
+                      activeCropBox && activeCropBox.w >= 5
+                        ? activeCropBox
+                        : { x: 0, y: 0, w: img.width, h: img.height };
+                    onCopyImagePart?.(img, crop);
+                  }}
+                  className="py-1.5 px-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1"
+                  title="복사 (Ctrl+C)"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>복사</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onApplyCropImage?.()}
+                  className="py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs rounded transition-colors"
+                  title="남기기 (Enter)"
+                >
+                  남기기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCancelCropImage?.()}
+                  className="py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs rounded transition-colors"
+                  title="취소 (Esc)"
+                >
+                  취소
+                </button>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <button
-                  onClick={() => onStartCropImage?.(img.id)}
-                  className="w-full py-2 bg-stone-800 hover:bg-stone-700 hover:border-amber-500/50 border border-stone-700 text-stone-200 hover:text-amber-300 font-medium text-xs rounded-md shadow-sm transition-all flex items-center justify-center space-x-2"
-                >
-                  <Crop className="w-3.5 h-3.5 text-amber-400" />
-                  <span>그림 자르기 시작</span>
-                </button>
-                <p className="text-[10px] text-stone-500">
-                  Tip: 캔버스에서 이미지를 <strong className="text-stone-400">더블 클릭</strong>하거나 단축키 <strong className="text-amber-400 font-mono">C</strong>를 눌러도 즉시 자를 수 있습니다.
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => onStartCropImage?.(img.id)}
+                className="w-full py-2 bg-stone-800 hover:bg-stone-700 border border-stone-700 hover:border-amber-500/50 text-stone-200 hover:text-amber-300 font-medium text-xs rounded-md transition-all flex items-center justify-center gap-1.5"
+                title="그림 자르기 (C)"
+              >
+                <Crop className="w-3.5 h-3.5 text-amber-400" />
+                <span>그림 자르기</span>
+              </button>
             )}
           </div>
 
@@ -1185,133 +1209,43 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </button>
           </div>
 
-          {/* Filter Sliders */}
-          <div className="space-y-2 pt-1 text-[11px]">
-            {/* Brightness */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>밝기 (Brightness)</span>
-                <span className="font-mono">{img.filters.brightness}%</span>
+          {/* Filter sliders — compact single-row: short label | slider | value */}
+          <div className="space-y-1 pt-1 text-[11px]">
+            {(
+              [
+                { key: 'brightness' as const, label: '밝기', min: 0, max: 200, unit: '%' },
+                { key: 'contrast' as const, label: '대비', min: 0, max: 200, unit: '%' },
+                { key: 'saturation' as const, label: '채도', min: 0, max: 200, unit: '%' },
+                { key: 'blur' as const, label: '흐림', min: 0, max: 20, unit: 'px' },
+                { key: 'grayscale' as const, label: '흑백', min: 0, max: 100, unit: '%' },
+                { key: 'invert' as const, label: '반전', min: 0, max: 100, unit: '%' },
+              ] as const
+            ).map((row) => (
+              <div key={row.key} className="flex items-center gap-2">
+                <span className="w-7 shrink-0 text-stone-400 text-[11px]">{row.label}</span>
+                <input
+                  type="range"
+                  min={row.min}
+                  max={row.max}
+                  value={img.filters[row.key]}
+                  onChange={(e) =>
+                    onUpdateElement({
+                      ...img,
+                      filters: {
+                        ...img.filters,
+                        [row.key]: parseInt(e.target.value, 10),
+                      },
+                    })
+                  }
+                  className="flex-1 min-w-0 accent-amber-500 h-1.5"
+                  title={`${row.label} ${img.filters[row.key]}${row.unit}`}
+                />
+                <span className="w-9 shrink-0 text-right font-mono text-[10px] text-stone-400 tabular-nums">
+                  {img.filters[row.key]}
+                  {row.unit}
+                </span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={img.filters.brightness}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, brightness: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
-
-            {/* Contrast */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>대비 (Contrast)</span>
-                <span className="font-mono">{img.filters.contrast}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={img.filters.contrast}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, contrast: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
-
-            {/* Saturation */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>채도 (Saturation)</span>
-                <span className="font-mono">{img.filters.saturation}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={img.filters.saturation}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, saturation: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
-
-            {/* Blur */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>흐림 효과 (Blur)</span>
-                <span className="font-mono">{img.filters.blur}px</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="20"
-                value={img.filters.blur}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, blur: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
-
-            {/* Grayscale */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>흑백 (Grayscale)</span>
-                <span className="font-mono">{img.filters.grayscale}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={img.filters.grayscale}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, grayscale: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
-
-            {/* Invert */}
-            <div>
-              <div className="flex justify-between text-stone-400">
-                <span>색상 반전 (Invert)</span>
-                <span className="font-mono">{img.filters.invert}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={img.filters.invert}
-                onChange={(e) =>
-                  onUpdateElement({
-                    ...img,
-                    filters: { ...img.filters, invert: parseInt(e.target.value) },
-                  })
-                }
-                className="w-full accent-amber-500"
-              />
-            </div>
+            ))}
           </div>
         </div>
         </div>

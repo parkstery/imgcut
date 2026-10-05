@@ -122,6 +122,8 @@ export interface ImageElement extends BaseElement {
   filters: ImageFilters;
   flipH?: boolean;
   flipV?: boolean;
+  /** When true, mouse/numeric resize keeps width:height ratio */
+  lockAspectRatio?: boolean;
   cornerRadius?: number;
   borderWidth?: number;
   borderColor?: string;

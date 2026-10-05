@@ -19,6 +19,11 @@ import { sampleColorFromCanvas } from '../utils/rasterExport';
 import { getToolCursor } from '../utils/cursorUtils';
 import { Crop, Scissors, Copy } from 'lucide-react';
 
+/** Default text tool: compact 12px label box */
+const DEFAULT_TEXT_FONT_SIZE = 12;
+const DEFAULT_TEXT_BOX_WIDTH = 96;
+const DEFAULT_TEXT_BOX_HEIGHT = 22;
+
 interface CanvasAreaProps {
   config: CanvasConfig;
   onUpdateConfig: (partial: Partial<CanvasConfig>) => void;
@@ -400,12 +405,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    const { width, height } = measureTextBox(draft, textEl.fontSize, textEl.width);
+    const fontSize = textEl.fontSize > 0 ? textEl.fontSize : DEFAULT_TEXT_FONT_SIZE;
+    const { width, height } = measureTextBox(draft, fontSize, DEFAULT_TEXT_BOX_WIDTH);
     onUpdateElement({
       ...textEl,
       text: draft,
-      width: Math.max(textEl.width, width),
-      height: Math.max(textEl.height, height),
+      fontSize,
+      width: Math.max(DEFAULT_TEXT_BOX_WIDTH, width),
+      height: Math.max(DEFAULT_TEXT_BOX_HEIGHT, height),
     });
   }, [
     editingTextId,
@@ -709,13 +716,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         type: 'text',
         x: Math.max(0, snapValue(pt.x)),
         y: Math.max(0, snapValue(pt.y)),
-        width: 180,
-        height: 48,
+        width: DEFAULT_TEXT_BOX_WIDTH,
+        height: DEFAULT_TEXT_BOX_HEIGHT,
         rotation: 0,
         opacity: 1,
         text: '',
         fontFamily: 'system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
-        fontSize: 28,
+        fontSize: DEFAULT_TEXT_FONT_SIZE,
         color: primaryColor,
         bold: false,
         italic: false,
@@ -1276,16 +1283,36 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           }
         }
 
-        // Shift key preserves aspect ratio
-        if (
-          e.shiftKey &&
-          (activeHandle === 'se' || activeHandle === 'ne' || activeHandle === 'sw' || activeHandle === 'nw')
-        ) {
+        // Shift or image lockAspectRatio keeps proportional size
+        const lockAspect =
+          e.shiftKey ||
+          (selectedElement.type === 'image' &&
+            !!(selectedElement as ImageElement).lockAspectRatio);
+        if (lockAspect && transformStart.elemH > 0) {
           const ratio = transformStart.elemW / transformStart.elemH;
-          if (newW / newH > ratio) {
-            newW = newH * ratio;
-          } else {
-            newH = newW / ratio;
+          if (activeHandle === 'e' || activeHandle === 'w') {
+            newH = Math.max(10, newW / ratio);
+          } else if (activeHandle === 'n' || activeHandle === 's') {
+            newW = Math.max(10, newH * ratio);
+          } else if (
+            activeHandle === 'se' ||
+            activeHandle === 'ne' ||
+            activeHandle === 'sw' ||
+            activeHandle === 'nw'
+          ) {
+            const dw = Math.abs(newW - transformStart.elemW);
+            const dh = Math.abs(newH - transformStart.elemH);
+            if (dw >= dh) {
+              newH = Math.max(10, newW / ratio);
+            } else {
+              newW = Math.max(10, newH * ratio);
+            }
+            if (activeHandle.includes('w')) {
+              newX = transformStart.elemX + transformStart.elemW - newW;
+            }
+            if (activeHandle.includes('n')) {
+              newY = transformStart.elemY + transformStart.elemH - newH;
+            }
           }
         }
 
@@ -1337,19 +1364,19 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         const hitIds: string[] = [];
         elements.forEach((el) => {
           if (el.visible === false) return;
-          // Check AABB overlap
+          // Only select elements fully inside the marquee (partial overlap excluded)
           const elRight = el.x + el.width;
           const elBottom = el.y + el.height;
           const mqRight = marqueeRect.x + marqueeRect.w;
           const mqBottom = marqueeRect.y + marqueeRect.h;
 
-          const overlaps =
-            el.x < mqRight &&
-            elRight > marqueeRect.x &&
-            el.y < mqBottom &&
-            elBottom > marqueeRect.y;
+          const fullyInside =
+            el.x >= marqueeRect.x &&
+            elRight <= mqRight &&
+            el.y >= marqueeRect.y &&
+            elBottom <= mqBottom;
 
-          if (overlaps) {
+          if (fullyInside) {
             hitIds.push(el.id);
           }
         });
@@ -2683,13 +2710,20 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         {/* Inline Text Editor Overlay */}
         {editingTextId &&
           (() => {
-            const textEl = elements.find((el) => el.id === editingTextId && el.type === 'text') as
+            const live = elements.find((el) => el.id === editingTextId && el.type === 'text') as
               | TextElement
               | undefined;
+            const textEl = live || editingTextSnapshot;
             if (!textEl) return null;
-            const draftSize = measureTextBox(editDraft || ' ', textEl.fontSize, textEl.width);
-            const boxW = Math.max(textEl.width, draftSize.width);
-            const boxH = Math.max(textEl.height, draftSize.height);
+            // Always prefer the element's fontSize; fall back to 12 for brand-new boxes
+            const fontSize = textEl.fontSize > 0 ? textEl.fontSize : DEFAULT_TEXT_FONT_SIZE;
+            const draftSize = measureTextBox(
+              editDraft || '텍스트 입력',
+              fontSize,
+              Math.min(textEl.width, DEFAULT_TEXT_BOX_WIDTH)
+            );
+            const boxW = Math.max(DEFAULT_TEXT_BOX_WIDTH, draftSize.width);
+            const boxH = Math.max(DEFAULT_TEXT_BOX_HEIGHT, draftSize.height);
             return (
               <textarea
                 ref={textEditRef}
@@ -2701,6 +2735,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   e.stopPropagation();
+                  // Ctrl+Enter / Cmd+Enter: confirm text entry
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    commitTextEdit();
+                    return;
+                  }
                   if (e.key === 'Escape') {
                     e.preventDefault();
                     commitTextEdit();
@@ -2713,7 +2753,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   width: `${boxW}px`,
                   height: `${boxH}px`,
                   fontFamily: textEl.fontFamily,
-                  fontSize: `${textEl.fontSize}px`,
+                  fontSize: `${fontSize}px`,
                   fontWeight: textEl.bold ? 'bold' : 'normal',
                   fontStyle: textEl.italic ? 'italic' : 'normal',
                   textDecoration: textEl.underline ? 'underline' : 'none',
@@ -2744,8 +2784,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             }}
             className="pointer-events-none z-30"
           >
-            {/* Dimmed Areas (outside crop box) */}
-            {/* Top Dim */}
+            {/* Dimmed Areas (outside crop region) */}
             <div
               style={{
                 position: 'absolute',
@@ -2756,7 +2795,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               }}
               className="bg-stone-950/65 pointer-events-auto"
             />
-            {/* Bottom Dim */}
             <div
               style={{
                 position: 'absolute',
@@ -2767,7 +2805,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               }}
               className="bg-stone-950/65 pointer-events-auto"
             />
-            {/* Left Dim */}
             <div
               style={{
                 position: 'absolute',
@@ -2778,7 +2815,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               }}
               className="bg-stone-950/65 pointer-events-auto"
             />
-            {/* Right Dim */}
             <div
               style={{
                 position: 'absolute',
@@ -2790,7 +2826,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               className="bg-stone-950/65 pointer-events-auto"
             />
 
-            {/* Active Crop Box Frame with 3x3 Rule-of-Thirds Grid */}
+            {/* Active Crop Box Frame */}
             <div
               style={{
                 position: 'absolute',
@@ -2799,9 +2835,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 width: `${imgCropBox.w}px`,
                 height: `${imgCropBox.h}px`,
               }}
-              className="border-2 border-white shadow-2xl pointer-events-none"
+              className="pointer-events-none border-2 border-white shadow-2xl"
             >
-              {/* Internal 3x3 Rule-of-Thirds Guidelines */}
               <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-40">
                 <div className="border-r border-b border-white" />
                 <div className="border-r border-b border-white" />
@@ -2814,52 +2849,41 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 <div />
               </div>
 
-              {/* Move Area inside crop box */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('move', e)}
                 className="absolute inset-0 cursor-move pointer-events-auto hover:bg-amber-500/10 transition-colors"
                 title="드래그하여 자르기 영역 이동"
               />
 
-              {/* PowerPoint Style Thick Corner Handles */}
-              {/* NW */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('nw', e)}
                 className="absolute -top-1.5 -left-1.5 w-4 h-4 border-t-4 border-l-4 border-black pointer-events-auto cursor-nwse-resize shadow bg-white/50"
               />
-              {/* NE */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('ne', e)}
                 className="absolute -top-1.5 -right-1.5 w-4 h-4 border-t-4 border-r-4 border-black pointer-events-auto cursor-nesw-resize shadow bg-white/50"
               />
-              {/* SE */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('se', e)}
                 className="absolute -bottom-1.5 -right-1.5 w-4 h-4 border-b-4 border-r-4 border-black pointer-events-auto cursor-nwse-resize shadow bg-white/50"
               />
-              {/* SW */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('sw', e)}
                 className="absolute -bottom-1.5 -left-1.5 w-4 h-4 border-b-4 border-l-4 border-black pointer-events-auto cursor-nesw-resize shadow bg-white/50"
               />
 
-              {/* PowerPoint Style Edge Mid-bars */}
-              {/* N */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('n', e)}
                 className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-black border border-white pointer-events-auto cursor-ns-resize shadow"
               />
-              {/* S */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('s', e)}
                 className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-black border border-white pointer-events-auto cursor-ns-resize shadow"
               />
-              {/* W */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('w', e)}
                 className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-1.5 h-6 bg-black border border-white pointer-events-auto cursor-ew-resize shadow"
               />
-              {/* E */}
               <div
                 onMouseDown={(e) => handleCropHandleMouseDown('e', e)}
                 className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-1.5 h-6 bg-black border border-white pointer-events-auto cursor-ew-resize shadow"
@@ -2880,7 +2904,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 {Math.round(imgCropBox.w)} × {Math.round(imgCropBox.h)} px
               </div>
 
-              {/* Aspect ratio quick presets */}
               <div className="flex items-center space-x-1 pr-1.5 border-r border-stone-700">
                 <button
                   type="button"
@@ -2908,14 +2931,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
                     setImgCropBox({
                       x: 0,
                       y: 0,
                       w: croppingImage.width,
                       h: croppingImage.height,
-                    })
-                  }
+                    });
+                  }}
                   className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-[10px] text-stone-400 transition-colors"
                   title="전체 영역으로 초기화"
                 >
@@ -2932,16 +2955,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   title="선택 영역을 오려내어 클립보드에 저장하고 원본에서 비웁니다 (Ctrl+X)"
                 >
                   <Scissors className="w-3 h-3" />
-                  <span>오려내기 (Ctrl+X)</span>
+                  <span>오려내기</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => onCopyImagePart?.(croppingImage, imgCropBox)}
                   className="px-2 py-1 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 hover:text-sky-200 border border-sky-500/30 text-[11px] font-semibold rounded transition-colors flex items-center space-x-1"
-                  title="선택 영역을 클립보드에 복사합니다 (Ctrl+C)"
+                  title="복사 (Ctrl+C)"
                 >
                   <Copy className="w-3 h-3" />
-                  <span>복사 (Ctrl+C)</span>
+                  <span>복사</span>
                 </button>
               </div>
 
@@ -2949,16 +2972,17 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 type="button"
                 onClick={() => handleApplyImageCrop(croppingImage, imgCropBox)}
                 className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded transition-colors shadow flex items-center"
-                title="지정한 영역만 남기고 나머지 이미지를 자릅니다 (Enter)"
+                title="남기기 (Enter)"
               >
-                남기기 완료 (Enter)
+                남기기
               </button>
               <button
                 type="button"
                 onClick={() => onFinishCropImage?.()}
                 className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs rounded transition-colors"
+                title="취소 (Esc)"
               >
-                취소 (Esc)
+                취소
               </button>
             </div>
           </div>
