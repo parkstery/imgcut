@@ -348,6 +348,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     clientY: number;
     initialBox: { x: number; y: number; w: number; h: number };
   } | null>(null);
+  // Parent passes a new callback whenever crop state updates. Effects must not
+  // depend on that identity, or the crop rectangle resets to the full image.
+  const onCropBoxChangeRef = useRef(onCropBoxChange);
+  onCropBoxChangeRef.current = onCropBoxChange;
 
   // Inline text editing
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -435,27 +439,28 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     [elements, croppingImageId]
   );
 
-  // Initialize crop box to image full bounds whenever entering crop mode
+  // Initialize crop box to the full image only when picture-crop starts.
   useEffect(() => {
-    if (croppingImage) {
-      const initial = {
-        x: 0,
-        y: 0,
-        w: croppingImage.width,
-        h: croppingImage.height,
-      };
-      setImgCropBox(initial);
-      onCropBoxChange?.(initial);
-    } else {
-      onCropBoxChange?.(null);
+    if (!croppingImageId) {
+      onCropBoxChangeRef.current?.(null);
+      return;
     }
-  }, [croppingImageId, croppingImage?.id, onCropBoxChange]);
+    const img = elements.find(
+      (el) => el.id === croppingImageId && el.type === 'image'
+    ) as ImageElement | undefined;
+    if (!img) return;
+    const initial = { x: 0, y: 0, w: img.width, h: img.height };
+    setImgCropBox(initial);
+    onCropBoxChangeRef.current?.(initial);
+    // Read the image at the moment crop mode starts. Later parent renders must not reset the box.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [croppingImageId]);
 
   useEffect(() => {
-    if (croppingImageId) {
-      onCropBoxChange?.(imgCropBox);
-    }
-  }, [imgCropBox, croppingImageId, onCropBoxChange]);
+    if (!croppingImageId) return;
+    if (imgCropBox.w < 1 || imgCropBox.h < 1) return;
+    onCropBoxChangeRef.current?.(imgCropBox);
+  }, [imgCropBox, croppingImageId]);
 
   // Is current tool an element manipulation tool or a drawing tool?
   // When in drawing tool mode (shape, brush, text, crop, pan), elements become transparent to clicks
@@ -1558,14 +1563,15 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     }
   };
 
-  // Synchronize Canvas Crop Box changes with parent
+  // Synchronize canvas-tool crop box with parent. Picture-crop owns the box while it is active.
   useEffect(() => {
+    if (croppingImageId) return;
     if (currentTool === 'crop' && cropBox && cropBox.w >= 5 && cropBox.h >= 5) {
-      onCropBoxChange?.(cropBox);
-    } else if (!croppingImageId) {
-      onCropBoxChange?.(null);
+      onCropBoxChangeRef.current?.(cropBox);
+    } else if (currentTool !== 'crop') {
+      onCropBoxChangeRef.current?.(null);
     }
-  }, [cropBox, currentTool, croppingImageId, onCropBoxChange]);
+  }, [cropBox, currentTool, croppingImageId]);
 
   // Reset cropBox when switching away from crop tool
   useEffect(() => {

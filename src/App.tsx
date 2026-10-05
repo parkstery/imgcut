@@ -159,6 +159,27 @@ export default function App() {
     activeImgCropBoxRef.current = null;
   }, []);
 
+  // Picture-crop reports the live rectangle. Ignore identical boxes so parent
+  // renders do not bounce back into the canvas and reset the crop.
+  const handleCropBoxChange = useCallback(
+    (box: { x: number; y: number; w: number; h: number } | null) => {
+      if (croppingImageId) {
+        activeImgCropBoxRef.current = box;
+        setActiveImgCropBox((prev) => {
+          if (box === prev) return prev;
+          if (!box || !prev) return box;
+          if (prev.x === box.x && prev.y === box.y && prev.w === box.w && prev.h === box.h) {
+            return prev;
+          }
+          return box;
+        });
+      } else {
+        activeCanvasCropBoxRef.current = box;
+      }
+    },
+    [croppingImageId]
+  );
+
   // Switching tools: canvas crop must not keep selection/transform active
   const handleSelectTool = useCallback((tool: ToolType) => {
     if (tool === 'crop') {
@@ -1005,6 +1026,47 @@ export default function App() {
       });
     },
     [elements, layers, pushHistory]
+  );
+
+  // New document: apply the chosen canvas and drop every object from the previous one.
+  const handleCreateNewCanvas = useCallback(
+    (newCfg: { width: number; height: number; backgroundColor: string }) => {
+      const nextLayers: Layer[] = [
+        {
+          id: 'layer-' + Date.now(),
+          name: '레이어1',
+          visible: true,
+          locked: false,
+          opacity: 1,
+        },
+      ];
+      const nextElements: CanvasElement[] = [];
+      const nextConfig: CanvasConfig = {
+        ...config,
+        width: newCfg.width,
+        height: newCfg.height,
+        backgroundColor: newCfg.backgroundColor,
+      };
+      setElements(nextElements);
+      setLayers(nextLayers);
+      setActiveLayerId(nextLayers[0].id);
+      setSelectedElementIds([]);
+      setCroppingImageId(null);
+      setActiveImgCropBox(null);
+      activeImgCropBoxRef.current = null;
+      activeCanvasCropBoxRef.current = null;
+      setConfig(nextConfig);
+      setHistory([
+        {
+          elements: nextElements,
+          layers: nextLayers,
+          activeLayerId: nextLayers[0].id,
+          canvasConfig: nextConfig,
+        },
+      ]);
+      setHistoryIndex(0);
+    },
+    [config]
   );
 
   // Layers Handlers
@@ -1960,14 +2022,7 @@ export default function App() {
           }}
           onCopyImagePart={handleCopyImagePart}
           onCutImagePart={handleCutImagePart}
-          onCropBoxChange={(box) => {
-            if (croppingImageId) {
-              activeImgCropBoxRef.current = box;
-              setActiveImgCropBox(box);
-            } else {
-              activeCanvasCropBoxRef.current = box;
-            }
-          }}
+          onCropBoxChange={handleCropBoxChange}
           layers={layers}
           elements={elements}
           onAddElement={handleAddElement}
@@ -2039,13 +2094,7 @@ export default function App() {
         isOpen={isNewCanvasOpen}
         onClose={() => setIsNewCanvasOpen(false)}
         currentConfig={config}
-        onCreate={(newCfg) => {
-          handleUpdateConfig({
-            width: newCfg.width,
-            height: newCfg.height,
-            backgroundColor: newCfg.backgroundColor,
-          });
-        }}
+        onCreate={handleCreateNewCanvas}
       />
 
       <ClipboardGuideModal
