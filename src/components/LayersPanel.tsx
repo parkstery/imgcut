@@ -149,7 +149,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   }
 
   return (
-    <aside className="w-64 bg-stone-900 border-r border-stone-800 text-stone-200 flex flex-col shrink-0 select-none text-xs">
+    <aside className="w-64 min-h-0 h-full bg-stone-900 border-r border-stone-800 text-stone-200 flex flex-col shrink-0 select-none text-xs">
       {/* Title row — always a single horizontal line */}
       <div className="px-3 pt-3 pb-1.5 border-b border-stone-800/80 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1.5 min-w-0 font-semibold text-stone-100 whitespace-nowrap">

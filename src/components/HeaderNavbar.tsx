@@ -80,7 +80,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   };
 
   return (
-    <header className="h-14 bg-stone-900 border-b border-stone-800 text-stone-200 px-3 flex items-center justify-between select-none z-30 shrink-0">
+    <header className="h-14 bg-stone-900 border-b border-stone-800 text-stone-200 px-3 flex items-center gap-2 select-none z-30 shrink-0 overflow-x-auto">
       {/* Hidden file inputs */}
       <input
         ref={projectInputRef}
@@ -157,6 +157,16 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
           aria-label="클립보드 붙여넣기"
         >
           <ClipboardPaste className="w-5 h-5" />
+        </button>
+
+        <button
+          id="btn-open-export"
+          onClick={onOpenExport}
+          className="p-2 rounded-md bg-amber-600 hover:bg-amber-500 text-white shadow-sm transition-all hover:shadow"
+          title="내보내기 (SVG / PNG / JPG)"
+          aria-label="내보내기"
+        >
+          <Download className="w-5 h-5" />
         </button>
       </div>
 
@@ -280,27 +290,14 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
         </div>
       </div>
 
-      {/* Right: Shortcuts Guide & Export Button */}
-      <div className="flex items-center space-x-2">
-        <button
-          id="btn-shortcuts"
-          onClick={onOpenShortcuts}
-          className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
-          title="단축키 안내"
-        >
-          <Keyboard className="w-4 h-4" />
-        </button>
-
-        <button
-          id="btn-open-export"
-          onClick={onOpenExport}
-          className="p-2 rounded-md bg-amber-600 hover:bg-amber-500 text-white shadow-sm transition-all hover:shadow"
-          title="내보내기 (SVG / PNG / JPG)"
-          aria-label="내보내기"
-        >
-          <Download className="w-5 h-5" />
-        </button>
-      </div>
+      <button
+        id="btn-shortcuts"
+        onClick={onOpenShortcuts}
+        className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+        title="단축키 안내"
+      >
+        <Keyboard className="w-4 h-4" />
+      </button>
     </header>
   );
 };

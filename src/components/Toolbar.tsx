@@ -86,7 +86,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const currentShape = SHAPE_ITEMS.find((s) => s.type === selectedShapeType) || SHAPE_ITEMS[0];
 
   return (
-    <div className="h-12 bg-stone-900/95 border-b border-stone-800 text-stone-200 px-4 flex items-center justify-between select-none z-20 shrink-0">
+    <div className="h-12 bg-stone-900/95 border-b border-stone-800 text-stone-200 px-4 flex items-center gap-2 select-none z-20 shrink-0 overflow-x-auto">
       {/* Left: Tools List */}
       <div className="flex items-center space-x-1">
         {/* Select Tool */}

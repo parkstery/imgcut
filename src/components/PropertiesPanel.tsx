@@ -120,7 +120,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     return (
       <aside
         onClick={onToggleCollapse}
-        className="w-10 bg-stone-900 border-l border-stone-800 text-stone-200 flex flex-col items-center py-3 select-none text-xs shrink-0 cursor-pointer hover:bg-stone-850 transition-colors group"
+        className="w-10 h-full min-h-0 bg-stone-900 border-l border-stone-800 text-stone-200 flex flex-col items-center py-3 select-none text-xs shrink-0 cursor-pointer hover:bg-stone-850 transition-colors group"
         title="속성 패널 펼치기 (단축키: ])"
       >
         <button
@@ -147,7 +147,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   if (!selectedElement) {
     // Canvas settings when nothing is selected
     return (
-      <aside className="w-72 bg-stone-900 border-l border-stone-800 text-stone-200 p-4 flex flex-col space-y-5 overflow-y-auto text-xs shrink-0 select-none">
+      <aside className="w-72 h-full min-h-0 bg-stone-900 border-l border-stone-800 text-stone-200 p-4 flex flex-col space-y-5 overflow-y-auto overscroll-contain text-xs shrink-0 select-none *:shrink-0">
         <div className="flex items-center justify-between pb-2 border-b border-stone-800">
           <div>
             <h2 className="font-semibold text-sm text-stone-100 mb-0.5">캔버스 속성</h2>
@@ -304,7 +304,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const img = isImage ? (selectedElement as ImageElement) : null;
 
   return (
-    <aside className="w-72 bg-stone-900 border-l border-stone-800 text-stone-200 p-4 flex flex-col space-y-4 overflow-y-auto text-xs shrink-0 select-none">
+    <aside className="w-72 h-full min-h-0 bg-stone-900 border-l border-stone-800 text-stone-200 p-4 flex flex-col space-y-4 overflow-y-auto overscroll-contain text-xs shrink-0 select-none *:shrink-0">
       {/* Header with Title and Quick Actions */}
       <div className="flex items-center justify-between pb-3 border-b border-stone-800">
         <div>

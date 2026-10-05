@@ -1951,8 +1951,9 @@ export default function App() {
     <div
       onMouseEnter={() => window.focus()}
       onClick={() => window.focus()}
-      className="flex flex-col h-screen w-screen overflow-hidden bg-stone-950 font-sans text-stone-100"
+      className="flex h-screen w-screen overflow-hidden bg-stone-950 font-sans text-stone-100"
     >
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
       {/* 1. Header Navigation Bar */}
       <HeaderNavbar
         canUndo={historyIndex > 0}
@@ -1987,8 +1988,8 @@ export default function App() {
         onStrokeWidthChange={handleStrokeWidthChange}
       />
 
-      {/* 3. Main Workspace: Layers Panel + Canvas + Properties Inspector */}
-      <div className="flex-1 flex overflow-hidden relative">
+      {/* 3. Main Workspace: Layers Panel + Canvas */}
+      <div className="flex-1 min-h-0 flex overflow-hidden relative">
         {/* Left: Layers Panel */}
         <LayersPanel
           layers={layers}
@@ -2050,9 +2051,11 @@ export default function App() {
           onFinishCropImage={handleFinishCropImage}
           onInsertImage={handleInsertImage}
         />
+      </div>
+      </div>
 
-        {/* Right: Properties Inspector Panel */}
-        <PropertiesPanel
+      {/* Right: Properties panel spans the full window height */}
+      <PropertiesPanel
           selectedElement={selectedElement}
           onUpdateElement={handleUpdateElement}
           onDuplicateElement={handleDuplicateElement}
@@ -2073,8 +2076,7 @@ export default function App() {
           onCutImagePart={handleCutImagePart}
           onCopyImagePart={handleCopyImagePart}
           activeCropBox={activeImgCropBox}
-        />
-      </div>
+      />
 
       {/* Modals */}
       <ExportModal
