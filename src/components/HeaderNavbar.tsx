@@ -9,6 +9,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Frame,
   Grid,
   Ruler,
   Image as ImageIcon,
@@ -38,6 +39,9 @@ interface HeaderNavbarProps {
   onLoadProject: (file: File) => void;
   onInsertImage: (file: File) => void;
   onPasteFromClipboard?: () => void;
+  onFitCanvasToContent?: () => void;
+  canFitCanvas?: boolean;
+  fitPreview?: string | null;
 }
 
 export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
@@ -59,6 +63,9 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   onLoadProject,
   onInsertImage,
   onPasteFromClipboard,
+  onFitCanvasToContent,
+  canFitCanvas = false,
+  fitPreview = null,
 }) => {
   const projectInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -286,6 +293,25 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="화면에 맞추기"
           >
             <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            id="btn-fit-canvas"
+            onClick={onFitCanvasToContent}
+            disabled={!canFitCanvas}
+            className={`p-1 rounded ml-1 transition-colors ${
+              canFitCanvas
+                ? 'text-stone-400 hover:text-white hover:bg-stone-800'
+                : 'text-stone-600 cursor-not-allowed'
+            }`}
+            title={
+              canFitCanvas
+                ? `캔버스를 콘텐츠 크기에 맞추기${fitPreview ? ` (${fitPreview})` : ''}`
+                : '맞춰줄 객체가 없습니다'
+            }
+            aria-label="캔버스를 콘텐츠 크기에 맞추기"
+          >
+            <Frame className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

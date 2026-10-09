@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MousePointer,
   Hand,
@@ -23,10 +24,11 @@ import {
   ArrowUpRight,
   Waypoints,
   Spline,
-  ChevronDown
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { ToolType, ShapeType } from '../types';
-import { PAINT_COLORS } from '../utils/colorUtils';
+import { OFFICE_THEME_PALETTES, PAINT_COLORS } from '../utils/colorUtils';
 
 interface ToolbarProps {
   currentTool: ToolType;
@@ -70,23 +72,43 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onStrokeWidthChange,
 }) => {
   const [showShapeMenu, setShowShapeMenu] = useState(false);
+  const [showColorPalette, setShowColorPalette] = useState(false);
   const shapeMenuRef = useRef<HTMLDivElement>(null);
+  const eyedropperBtnRef = useRef<HTMLButtonElement>(null);
+  const colorPaletteRef = useRef<HTMLDivElement>(null);
 
-  // Close shape menu when clicking outside
+  // Close shape / color menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (shapeMenuRef.current && !shapeMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (shapeMenuRef.current && !shapeMenuRef.current.contains(target)) {
         setShowShapeMenu(false);
+      }
+      const onEyedropper =
+        eyedropperBtnRef.current?.contains(target) ||
+        colorPaletteRef.current?.contains(target);
+      if (!onEyedropper) {
+        setShowColorPalette(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Keyboard shortcut (K) also opens the color palette
+  useEffect(() => {
+    if (currentTool === 'eyedropper') {
+      setShowColorPalette(true);
+    }
+  }, [currentTool]);
+
   const currentShape = SHAPE_ITEMS.find((s) => s.type === selectedShapeType) || SHAPE_ITEMS[0];
+  const displayColor = primaryColor.startsWith('#')
+    ? primaryColor.toUpperCase()
+    : primaryColor;
 
   return (
-    <div className="h-12 bg-stone-900/95 border-b border-stone-800 text-stone-200 px-4 flex items-center gap-2 select-none z-20 shrink-0 overflow-x-auto">
+    <div className="h-12 bg-stone-900/95 border-b border-stone-800 text-stone-200 px-4 flex items-center justify-between select-none z-20 shrink-0 overflow-visible">
       {/* Left: Tools List */}
       <div className="flex items-center space-x-1">
         {/* Select Tool */}
@@ -348,19 +370,108 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Type className="w-4 h-4" />
         </button>
 
-        {/* Eyedropper */}
+        {/* Eyedropper — opens color palette at canvas top-right */}
         <button
+          ref={eyedropperBtnRef}
           id="tool-eyedropper"
-          onClick={() => onSelectTool('eyedropper')}
+          onClick={() => {
+            onSelectTool('eyedropper');
+            setShowColorPalette(true);
+            setShowShapeMenu(false);
+          }}
           className={`p-2 rounded-md transition-colors ${
-            currentTool === 'eyedropper'
+            currentTool === 'eyedropper' || showColorPalette
               ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
               : 'text-stone-300 hover:text-white hover:bg-stone-800'
           }`}
-          title="색상 추출 스포이트 (K)"
+          title="색상 팔레트 / 스포이트 (K)"
         >
           <Pipette className="w-4 h-4" />
         </button>
+
+        {showColorPalette &&
+          createPortal(
+            <div
+              ref={colorPaletteRef}
+              id="color-palette-panel"
+              className="fixed z-[60] top-[6.75rem] right-[18.75rem] w-[12.6rem] bg-stone-900/95 border border-stone-700 rounded-lg shadow-2xl overflow-hidden backdrop-blur-sm"
+            >
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-stone-800">
+                <div className="flex items-center gap-1 text-[10px] font-semibold text-stone-200">
+                  <Pipette className="w-3 h-3 text-amber-400" />
+                  <span>컬러 팔레트</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowColorPalette(false)}
+                  className="p-0.5 rounded text-stone-400 hover:text-white hover:bg-stone-800"
+                  title="닫기"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="p-2 space-y-1.5 max-h-48 overflow-y-auto">
+                {OFFICE_THEME_PALETTES.map((palette) => (
+                  <div key={palette.name}>
+                    <div className="text-[9px] text-stone-400 font-medium mb-1 truncate">
+                      {palette.name}
+                    </div>
+                    <div className="flex gap-0.5">
+                      {palette.colors.map((c) => (
+                        <button
+                          key={`${palette.name}-${c}`}
+                          type="button"
+                          onClick={() => onPrimaryColorChange(c)}
+                          className={`w-5 h-5 rounded border transition-transform hover:scale-105 ${
+                            primaryColor.toLowerCase() === c.toLowerCase()
+                              ? 'border-amber-400 ring-1 ring-amber-400 z-10'
+                              : 'border-stone-700/70'
+                          }`}
+                          style={{ backgroundColor: c }}
+                          title={c}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex items-center justify-between gap-2 border-t border-stone-800 pt-1">
+                  <span className="text-[9px] text-stone-400 shrink-0">사용자 지정</span>
+                  <label className="flex-1 flex justify-end cursor-pointer min-w-0" title="사용자 지정 색 선택">
+                    <span
+                      className="block w-12 h-4 rounded border border-stone-600 shadow-inner"
+                      style={{
+                        backgroundColor: primaryColor.startsWith('#') ? primaryColor : '#000000',
+                      }}
+                    />
+                    <input
+                      type="color"
+                      value={primaryColor.startsWith('#') ? primaryColor : '#000000'}
+                      onChange={(e) => onPrimaryColorChange(e.target.value)}
+                      className="w-0 h-0 opacity-0 absolute"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="px-2 py-1.5 border-t border-stone-700 bg-stone-950/80 flex items-center gap-1.5">
+                <div
+                  className="w-5 h-5 rounded border border-stone-600 shadow-inner shrink-0"
+                  style={{
+                    backgroundColor: primaryColor.startsWith('#') ? primaryColor : '#000000',
+                  }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[8px] text-stone-500 leading-none">선택 색상</div>
+                  <div className="font-mono text-[11px] text-amber-300 tracking-wide truncate">
+                    {displayColor}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
 
         {/* Paint Bucket */}
         <button

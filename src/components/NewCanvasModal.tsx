@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, FilePlus2 } from 'lucide-react';
 import { CanvasConfig } from '../types';
 
@@ -18,17 +18,33 @@ const PRESETS = [
   { name: '트위터 / 웹 헤더', width: 1200, height: 630, desc: '블로그 및 SNS 공유 카드' },
 ];
 
+function parseCanvasSize(raw: string, fallback = 100): number {
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(4000, parsed);
+}
+
 export const NewCanvasModal: React.FC<NewCanvasModalProps> = ({
   isOpen,
   onClose,
   onCreate,
   currentConfig,
 }) => {
-  const [width, setWidth] = useState(currentConfig.width);
-  const [height, setHeight] = useState(currentConfig.height);
+  const [widthText, setWidthText] = useState(String(currentConfig.width));
+  const [heightText, setHeightText] = useState(String(currentConfig.height));
   const [bg, setBg] = useState(currentConfig.backgroundColor || '#FFFFFF');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setWidthText(String(currentConfig.width));
+    setHeightText(String(currentConfig.height));
+    setBg(currentConfig.backgroundColor || '#FFFFFF');
+  }, [isOpen, currentConfig.width, currentConfig.height, currentConfig.backgroundColor]);
+
   if (!isOpen) return null;
+
+  const widthNum = parseInt(widthText, 10);
+  const heightNum = parseInt(heightText, 10);
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -60,11 +76,11 @@ export const NewCanvasModal: React.FC<NewCanvasModalProps> = ({
                 <button
                   key={p.name}
                   onClick={() => {
-                    setWidth(p.width);
-                    setHeight(p.height);
+                    setWidthText(String(p.width));
+                    setHeightText(String(p.height));
                   }}
                   className={`p-2.5 rounded-lg border text-left transition-colors ${
-                    width === p.width && height === p.height
+                    widthNum === p.width && heightNum === p.height
                       ? 'border-amber-500 bg-amber-500/10 text-amber-300 font-medium'
                       : 'border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200'
                   }`}
@@ -83,10 +99,11 @@ export const NewCanvasModal: React.FC<NewCanvasModalProps> = ({
               <span className="text-[11px] text-stone-400 block mb-1">가로 너비 (px)</span>
               <input
                 type="number"
-                min="100"
+                min="1"
                 max="4000"
-                value={width}
-                onChange={(e) => setWidth(Math.max(100, parseInt(e.target.value) || 800))}
+                value={widthText}
+                onChange={(e) => setWidthText(e.target.value)}
+                onBlur={() => setWidthText(String(parseCanvasSize(widthText)))}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2.5 py-1.5 text-stone-100 font-mono text-xs"
               />
             </div>
@@ -94,10 +111,11 @@ export const NewCanvasModal: React.FC<NewCanvasModalProps> = ({
               <span className="text-[11px] text-stone-400 block mb-1">세로 높이 (px)</span>
               <input
                 type="number"
-                min="100"
+                min="1"
                 max="4000"
-                value={height}
-                onChange={(e) => setHeight(Math.max(100, parseInt(e.target.value) || 600))}
+                value={heightText}
+                onChange={(e) => setHeightText(e.target.value)}
+                onBlur={() => setHeightText(String(parseCanvasSize(heightText)))}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2.5 py-1.5 text-stone-100 font-mono text-xs"
               />
             </div>
@@ -155,7 +173,11 @@ export const NewCanvasModal: React.FC<NewCanvasModalProps> = ({
           </button>
           <button
             onClick={() => {
-              onCreate({ width, height, backgroundColor: bg });
+              onCreate({
+                width: parseCanvasSize(widthText),
+                height: parseCanvasSize(heightText),
+                backgroundColor: bg,
+              });
               onClose();
             }}
             className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"

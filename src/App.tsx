@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   CanvasConfig,
   CanvasElement,
@@ -19,6 +19,7 @@ import { ShortcutsGuideModal } from './components/ShortcutsGuideModal';
 import { NewCanvasModal } from './components/NewCanvasModal';
 import { ClipboardGuideModal } from './components/ClipboardGuideModal';
 import { exportRegionToRaster } from './utils/rasterExport';
+import { getContentBounds } from './utils/canvasFit';
 import {
   extractImageSlice,
   getImageLocalIntersection,
@@ -658,6 +659,57 @@ export default function App() {
     },
     [config, elements, layers, pushHistory, showToast]
   );
+
+  // Fit Canvas To Content: 객체 최대 범위에 맞춰 한 번에 캔버스 축소
+  const handleFitCanvasToContent = useCallback(() => {
+    const bounds = getContentBounds(elements, layers);
+    if (!bounds) {
+      showToast('캔버스에 맞춰줄 객체가 없습니다.');
+      return;
+    }
+    const nextWidth = Math.min(4000, Math.max(1, Math.round(bounds.w)));
+    const nextHeight = Math.min(4000, Math.max(1, Math.round(bounds.h)));
+    const nextX = Math.round(bounds.x);
+    const nextY = Math.round(bounds.y);
+    if (
+      nextX === 0 &&
+      nextY === 0 &&
+      nextWidth === config.width &&
+      nextHeight === config.height
+    ) {
+      showToast('이미 콘텐츠 크기에 맞습니다.');
+      return;
+    }
+    const nextConfig: CanvasConfig = {
+      ...config,
+      width: nextWidth,
+      height: nextHeight,
+    };
+    const nextElements = elements.map((el) => {
+      const nextElX = Math.round(el.x - nextX);
+      const nextElY = Math.round(el.y - nextY);
+      if (el.type === 'brush' && el.points) {
+        return {
+          ...el,
+          x: nextElX,
+          y: nextElY,
+          points: el.points.map((p) => ({
+            x: Math.round(p.x - nextX),
+            y: Math.round(p.y - nextY),
+          })),
+        };
+      }
+      return {
+        ...el,
+        x: nextElX,
+        y: nextElY,
+      };
+    });
+    setConfig(nextConfig);
+    setElements(nextElements);
+    pushHistory(nextElements, layers, nextConfig);
+    showToast(`캔버스를 콘텐츠 크기 ${nextWidth}×${nextHeight}px에 맞췄습니다.`);
+  }, [config, elements, layers, pushHistory, showToast]);
 
   // Cut Screen/Canvas Dragged Region (Ctrl+X when Crop box is active)
   // Punches transparent holes in intersecting images; slice goes to clipboard only (not placed on canvas).
@@ -1947,13 +1999,19 @@ export default function App() {
 
   const selectedElement = elements.find((el) => el.id === selectedElementId) || null;
 
+  const fitBounds = useMemo(() => getContentBounds(elements, layers), [elements, layers]);
+  const canFitCanvas = !!fitBounds;
+  const fitPreview = fitBounds
+    ? `${Math.min(4000, Math.max(1, Math.round(fitBounds.w)))}×${Math.min(4000, Math.max(1, Math.round(fitBounds.h)))}px`
+    : null;
+
   return (
     <div
       onMouseEnter={() => window.focus()}
       onClick={() => window.focus()}
       className="flex h-screen w-screen overflow-hidden bg-stone-950 font-sans text-stone-100"
     >
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-visible">
       {/* 1. Header Navigation Bar */}
       <HeaderNavbar
         canUndo={historyIndex > 0}
@@ -1974,6 +2032,9 @@ export default function App() {
         onLoadProject={handleLoadProject}
         onInsertImage={handleInsertImage}
         onPasteFromClipboard={handlePasteAction}
+        onFitCanvasToContent={handleFitCanvasToContent}
+        canFitCanvas={canFitCanvas}
+        fitPreview={fitPreview}
       />
 
       {/* 2. Top Tool Palette */}
@@ -2076,6 +2137,9 @@ export default function App() {
           onCutImagePart={handleCutImagePart}
           onCopyImagePart={handleCopyImagePart}
           activeCropBox={activeImgCropBox}
+          onFitCanvasToContent={handleFitCanvasToContent}
+          canFitCanvas={canFitCanvas}
+          fitPreview={fitPreview}
       />
 
       {/* Modals */}

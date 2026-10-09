@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CanvasElement,
   ShapeElement,
@@ -91,6 +91,9 @@ interface PropertiesPanelProps {
   onCutImagePart?: (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => void;
   onCopyImagePart?: (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => void;
   activeCropBox?: { x: number; y: number; w: number; h: number } | null;
+  onFitCanvasToContent?: () => void;
+  canFitCanvas?: boolean;
+  fitPreview?: string | null;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
@@ -114,7 +117,34 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onCutImagePart,
   onCopyImagePart,
   activeCropBox,
+  onFitCanvasToContent,
+  canFitCanvas = false,
+  fitPreview = null,
 }) => {
+  const [canvasWidthDraft, setCanvasWidthDraft] = useState(String(config.width));
+  const [canvasHeightDraft, setCanvasHeightDraft] = useState(String(config.height));
+
+  useEffect(() => {
+    setCanvasWidthDraft(String(config.width));
+  }, [config.width]);
+
+  useEffect(() => {
+    setCanvasHeightDraft(String(config.height));
+  }, [config.height]);
+
+  const commitCanvasSize = (axis: 'width' | 'height', raw: string) => {
+    const parsed = parseInt(raw, 10);
+    // Empty / invalid → default 100. Values below 100 are allowed (min 1).
+    const next = Number.isFinite(parsed) && parsed >= 1 ? Math.min(4000, parsed) : 100;
+    if (axis === 'width') {
+      setCanvasWidthDraft(String(next));
+      if (next !== config.width) onUpdateConfig({ width: next });
+    } else {
+      setCanvasHeightDraft(String(next));
+      if (next !== config.height) onUpdateConfig({ height: next });
+    }
+  };
+
   // Collapsed Rail View
   if (!isOpen) {
     return (
@@ -202,10 +232,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <input
                 id="input-canvas-width"
                 type="number"
-                min="100"
+                min="1"
                 max="4000"
-                value={config.width}
-                onChange={(e) => onUpdateConfig({ width: Math.max(100, parseInt(e.target.value) || 800) })}
+                value={canvasWidthDraft}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setCanvasWidthDraft(raw);
+                  if (raw === '' || raw === '-') return;
+                  const parsed = parseInt(raw, 10);
+                  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 4000) {
+                    onUpdateConfig({ width: parsed });
+                  }
+                }}
+                onBlur={() => commitCanvasSize('width', canvasWidthDraft)}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2.5 py-1.5 text-stone-100 focus:outline-none focus:border-amber-500 font-mono"
               />
             </div>
@@ -214,14 +253,51 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <input
                 id="input-canvas-height"
                 type="number"
-                min="100"
+                min="1"
                 max="4000"
-                value={config.height}
-                onChange={(e) => onUpdateConfig({ height: Math.max(100, parseInt(e.target.value) || 600) })}
+                value={canvasHeightDraft}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setCanvasHeightDraft(raw);
+                  if (raw === '' || raw === '-') return;
+                  const parsed = parseInt(raw, 10);
+                  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 4000) {
+                    onUpdateConfig({ height: parsed });
+                  }
+                }}
+                onBlur={() => commitCanvasSize('height', canvasHeightDraft)}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2.5 py-1.5 text-stone-100 focus:outline-none focus:border-amber-500 font-mono"
               />
             </div>
           </div>
+        </div>
+
+        {/* Fit Canvas To Content */}
+        <div className="space-y-2">
+          <label className="text-stone-300 font-medium block">콘텐츠에 맞추기</label>
+          <button
+            id="btn-fit-canvas-panel"
+            type="button"
+            onClick={onFitCanvasToContent}
+            disabled={!canFitCanvas}
+            className={`w-full py-2 rounded-md border text-xs font-medium transition-colors ${
+              canFitCanvas
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                : 'border-stone-800 text-stone-600 cursor-not-allowed'
+            }`}
+            title={
+              canFitCanvas
+                ? `이미지와 객체 최대 범위에 맞춰 캔버스를 한 번에 줄입니다${fitPreview ? ` (${fitPreview})` : ''}`
+                : '맞춰줄 객체가 없습니다'
+            }
+          >
+            {canFitCanvas
+              ? `콘텐츠 크기로 줄이기${fitPreview ? ` (${fitPreview})` : ''}`
+              : '맞춰줄 객체가 없습니다'}
+          </button>
+          <p className="text-[10px] text-stone-500 leading-snug">
+            숨김 레이어·숨김 객체는 제외하고, 실행 취소(Ctrl+Z)로 되돌릴 수 있습니다.
+          </p>
         </div>
 
         {/* Background Color */}
@@ -351,6 +427,25 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         title={isStraightLine ? '위치 및 길이' : '위치 및 크기'}
         headerRight={<NudgeKeyHint />}
       >
+        {isImage && img && (
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-stone-300">
+            <input
+              type="checkbox"
+              checked={!!img.lockAspectRatio}
+              onChange={(e) =>
+                onUpdateElement({ ...img, lockAspectRatio: e.target.checked })
+              }
+              className="accent-amber-500 w-3.5 h-3.5"
+            />
+            {img.lockAspectRatio ? (
+              <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+            ) : (
+              <LockOpen className="w-3 h-3 text-stone-500 shrink-0" />
+            )}
+            <span>비율 고정 (Lock)</span>
+          </label>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] text-stone-500 shrink-0 w-10">X</span>
@@ -442,25 +537,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
         </div>
-
-        {isImage && img && (
-          <label className="flex items-center gap-2 pt-0.5 cursor-pointer select-none text-[11px] text-stone-300">
-            <input
-              type="checkbox"
-              checked={!!img.lockAspectRatio}
-              onChange={(e) =>
-                onUpdateElement({ ...img, lockAspectRatio: e.target.checked })
-              }
-              className="accent-amber-500 w-3.5 h-3.5"
-            />
-            {img.lockAspectRatio ? (
-              <Lock className="w-3 h-3 text-amber-400 shrink-0" />
-            ) : (
-              <LockOpen className="w-3 h-3 text-stone-500 shrink-0" />
-            )}
-            <span>비율 고정 (Lock)</span>
-          </label>
-        )}
 
         {/* Rotation */}
         <div className="flex items-center space-x-2 pt-0.5">
