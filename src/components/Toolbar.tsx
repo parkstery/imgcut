@@ -411,7 +411,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 </button>
               </div>
 
-              <div className="p-2 space-y-1.5 max-h-48 overflow-y-auto">
+              <div className="p-2 space-y-1.5 max-h-[calc(100vh-11rem)] overflow-y-auto">
                 {OFFICE_THEME_PALETTES.map((palette) => (
                   <div key={palette.name}>
                     <div className="text-[9px] text-stone-400 font-medium mb-1 truncate">
@@ -463,7 +463,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   }}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[8px] text-stone-500 leading-none">선택 색상</div>
                   <div className="font-mono text-[11px] text-amber-300 tracking-wide truncate">
                     {displayColor}
                   </div>
@@ -487,19 +486,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <PaintBucket className="w-4 h-4" />
         </button>
 
-        {/* Crop Tool */}
+        {/* Crop Tool — always emphasized (frequently used) + reserved space on its right */}
         <button
           id="tool-crop"
           onClick={() => onSelectTool('crop')}
-          className={`p-2 rounded-md transition-colors ${
+          className={`p-2 rounded-md border transition-colors ${
             currentTool === 'crop'
-              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
-              : 'text-stone-300 hover:text-white hover:bg-stone-800'
+              ? 'bg-amber-500 text-stone-950 font-bold shadow-md border-amber-400 ring-2 ring-amber-400/60'
+              : 'text-amber-300 bg-amber-500/15 border-amber-500/50 hover:bg-amber-500/30 hover:text-amber-100'
           }`}
           title="화면 영역 캡쳐 및 자르기 (Crop) - 드래그 후 Ctrl+C로 캡쳐 복사, Ctrl+V로 붙여넣기 (C)"
         >
           <Crop className="w-4 h-4" />
         </button>
+
+        {/* Empty spacer (~1 button width) so the crop button stands out */}
+        <div className="w-9 shrink-0" aria-hidden="true" />
       </div>
 
       {/* Center/Right: Stroke Width & Quick Color Palette */}

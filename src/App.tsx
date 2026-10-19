@@ -148,6 +148,35 @@ export default function App() {
     elements?: CanvasElement[];
   } | null>(null);
 
+  // Size of the last PNG we exported to the OS clipboard (null = we didn't).
+  // Used to tell "our own leftover export" apart from a NEW OS screenshot on paste.
+  const lastWrittenPngSizeRef = useRef<number | null>(null);
+
+  // Export a PNG blob to the OS clipboard so OTHER apps can paste it.
+  // Returns true when the OS-level write actually succeeded.
+  const writeImageBlobToSystemClipboard = useCallback(
+    async (blob: Blob | null | undefined): Promise<boolean> => {
+      lastWrittenPngSizeRef.current = null;
+      if (!blob) return false;
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          lastWrittenPngSizeRef.current = blob.size;
+          return true;
+        } catch (e) {
+          console.warn('System clipboard write failed:', e);
+          showToast(
+            '시스템 클립보드 복사가 거부되었습니다. 앱 화면을 마우스로 클릭해 포커스를 준 뒤 다시 시도하세요.'
+          );
+          return false;
+        }
+      }
+      showToast('이 브라우저는 시스템 클립보드로 PNG 내보내기를 지원하지 않습니다. Chrome/Edge를 권장합니다.');
+      return false;
+    },
+    [showToast]
+  );
+
   const handleStartCropImage = useCallback((id: string) => {
     setCroppingImageId(id);
     setSelectedElementIds([id]);
@@ -744,14 +773,8 @@ export default function App() {
           },
         };
 
-        if (blob && navigator.clipboard && window.ClipboardItem) {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob }),
-            ]);
-          } catch (e) {
-            console.warn('System clipboard write error:', e);
-          }
+        if (blob) {
+          await writeImageBlobToSystemClipboard(blob);
         }
 
         const regRight = region.x + region.w;
@@ -799,7 +822,7 @@ export default function App() {
         showToast('영역 오려내기 중 오류가 발생했습니다.');
       }
     },
-    [layers, elements, config, pushHistory, showToast]
+    [layers, elements, config, pushHistory, showToast, writeImageBlobToSystemClipboard]
   );
 
   // Copy Screen/Canvas Dragged Region (Ctrl+C when Crop box is active)
@@ -829,15 +852,7 @@ export default function App() {
           },
         };
 
-        if (blob && navigator.clipboard && window.ClipboardItem) {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob }),
-            ]);
-          } catch (e) {
-            console.warn('System clipboard write error:', e);
-          }
-        }
+        await writeImageBlobToSystemClipboard(blob);
 
         showToast('지정한 화면 영역을 캡쳐 복사했습니다. (Ctrl+V로 붙여넣기)');
       } catch (err) {
@@ -845,7 +860,7 @@ export default function App() {
         showToast('영역 캡쳐 중 오류가 발생했습니다.');
       }
     },
-    [layers, elements, config, showToast]
+    [layers, elements, config, showToast, writeImageBlobToSystemClipboard]
   );
 
   // Copy Selected Canvas Elements (Ctrl+C)
@@ -862,6 +877,7 @@ export default function App() {
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText('').catch(() => {});
     }
+    lastWrittenPngSizeRef.current = null;
     showToast(`${selected.length}개 객체가 복사되었습니다. (Ctrl+V로 붙여넣기)`);
   }, [elements, selectedElementIds, showToast]);
 
@@ -878,6 +894,7 @@ export default function App() {
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText('').catch(() => {});
     }
+    lastWrittenPngSizeRef.current = null;
     handleDeleteSelectedElements();
     showToast(`${selected.length}개 객체를 잘라냈습니다. (Ctrl+V로 붙여넣기)`);
   }, [elements, selectedElementIds, handleDeleteSelectedElements, showToast]);
@@ -903,13 +920,9 @@ export default function App() {
         };
 
         if (navigator.clipboard && window.ClipboardItem) {
-          try {
-            const res = await fetch(slice.src);
-            const blob = await res.blob();
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          } catch (e) {
-            console.warn('System clipboard write warning:', e);
-          }
+          const res = await fetch(slice.src);
+          const sliceBlob = await res.blob();
+          await writeImageBlobToSystemClipboard(sliceBlob);
         }
 
         showToast('선택한 이미지 영역을 복사했습니다. (Ctrl+V로 붙여넣기)');
@@ -918,7 +931,7 @@ export default function App() {
         showToast('이미지 복사 중 오류가 발생했습니다.');
       }
     },
-    [showToast]
+    [showToast, writeImageBlobToSystemClipboard]
   );
 
   // Cut (오려내기) Selected Region of an Image (Ctrl+X in crop mode)
@@ -951,13 +964,9 @@ export default function App() {
         };
 
         if (navigator.clipboard && window.ClipboardItem) {
-          try {
-            const res = await fetch(slice.src);
-            const blob = await res.blob();
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          } catch (e) {
-            console.warn('System clipboard write warning:', e);
-          }
+          const res = await fetch(slice.src);
+          const sliceBlob = await res.blob();
+          await writeImageBlobToSystemClipboard(sliceBlob);
         }
 
         setElements((prev) => {
@@ -974,7 +983,7 @@ export default function App() {
         showToast('이미지 오려내기 중 오류가 발생했습니다.');
       }
     },
-    [layers, config, pushHistory, showToast]
+    [layers, config, pushHistory, showToast, writeImageBlobToSystemClipboard]
   );
 
   // Bring Forward / Send Backward
@@ -1525,9 +1534,23 @@ export default function App() {
       const clipboardData = e.clipboardData;
       if (!clipboardData) return;
 
-      // 1) App-internal cut/copy first — crop slices use origin + 10px offset
-      //    (crop also writes PNG to OS clipboard; without this, OS paste wins and loses position)
+      // 1) App-internal cut/copy first — crop slices use origin + 10px offset.
+      //    Those copies also export the same PNG to the OS clipboard, so an equal
+      //    size file means "our own leftover export" → paste app-internal content.
+      //    But a NEW OS screenshot (Snipping Tool etc.) has different bytes → it
+      //    must win, otherwise Windows captures could never be pasted in.
       if (internalClipboardRef.current) {
+        const pendingImageFile = extractImageFileFromClipboard(clipboardData);
+        if (
+          pendingImageFile &&
+          lastWrittenPngSizeRef.current !== null &&
+          pendingImageFile.size !== lastWrittenPngSizeRef.current
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleInsertImage(pendingImageFile);
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         pasteFromInternalClipboard();

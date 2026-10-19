@@ -20,6 +20,20 @@ function makeExportFilename(date = new Date()): string {
   return `im-${yy}${mm}${dd}-${hh}${mi}${ss}`;
 }
 
+/** Human-readable byte size (B / KB / MB). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+/** Approximate byte size of a data URL (base64 → ~0.75 bytes per char). */
+function estimateBytesFromDataUrl(dataUrl: string): number {
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx < 0) return 0;
+  return Math.round((dataUrl.length - commaIdx - 1) * 0.75);
+}
+
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -35,9 +49,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   elements,
   config,
 }) => {
-  const [format, setFormat] = useState<'svg' | 'png' | 'jpeg'>('png');
+  const [format, setFormat] = useState<'svg' | 'png' | 'jpeg' | 'webp'>('png');
   const [scale, setScale] = useState<number>(1);
   const [transparent, setTransparent] = useState<boolean>(false);
+  const [qualityPct, setQualityPct] = useState<number>(80);
   const [filename, setFilename] = useState<string>(() => makeExportFilename());
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -46,24 +61,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setFormat('png');
+      setQualityPct(80);
       setFilename(makeExportFilename());
     }
   }, [isOpen]);
 
-  // Generate a live preview when modal opens or settings change
+  // Generate a live preview when modal opens or settings change (debounced —
+  // the preview renders at the real export scale so its byte size doubles as
+  // a true capacity estimate).
   useEffect(() => {
     if (!isOpen) return;
     let isCancelled = false;
 
-    async function updatePreview() {
+    const timer = setTimeout(async () => {
       try {
         const url = await exportToRaster(
           layers,
           elements,
           config,
-          'png',
-          Math.min(1, 400 / config.width),
-          transparent
+          format === 'svg' ? 'png' : format,
+          scale,
+          transparent,
+          qualityPct / 100
         );
         if (!isCancelled) {
           setPreviewUrl(url);
@@ -71,13 +90,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } catch (err) {
         console.error('Preview error:', err);
       }
-    }
+    }, 300);
 
-    updatePreview();
     return () => {
       isCancelled = true;
+      clearTimeout(timer);
     };
-  }, [isOpen, layers, elements, config, transparent]);
+  }, [isOpen, layers, elements, config, transparent, format, scale, qualityPct]);
 
   if (!isOpen) return null;
 
@@ -96,7 +115,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           format,
           scale,
           transparent,
-          0.92
+          qualityPct / 100
         );
         downloadDataUrl(dataUrl, `${baseName}.${format}`);
       }
@@ -110,6 +129,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const outputWidth = config.width * scale;
   const outputHeight = config.height * scale;
+  const isLossy = format === 'jpeg' || format === 'webp';
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -140,7 +160,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             {/* Format Picker */}
             <div>
               <label className="text-stone-300 font-medium block mb-2">포맷 선택</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setFormat('png')}
                   className={`p-2.5 rounded-lg border text-center transition-all ${
@@ -166,6 +186,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
 
                 <button
+                  onClick={() => setFormat('webp')}
+                  className={`p-2.5 rounded-lg border text-center transition-all ${
+                    format === 'webp'
+                      ? 'border-amber-500 bg-amber-500/10 text-amber-300 font-bold ring-1 ring-amber-500/40'
+                      : 'border-stone-800 hover:border-stone-700 text-stone-400'
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4 mx-auto mb-1 text-violet-400" />
+                  <span>WebP (고압축)</span>
+                </button>
+
+                <button
                   onClick={() => setFormat('svg')}
                   className={`p-2.5 rounded-lg border text-center transition-all ${
                     format === 'svg'
@@ -178,6 +210,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Compression Quality (JPEG / WebP only) */}
+            {isLossy && (
+              <div>
+                <label className="text-stone-300 font-medium block mb-1">
+                  압축 품질 <span className="text-amber-400 font-semibold">{qualityPct}%</span>
+                </label>
+                <input
+                  id="export-quality-range"
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={qualityPct}
+                  onChange={(e) => setQualityPct(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer"
+                />
+                <p className="text-[10px] text-stone-500 mt-1">
+                  낮을수록 파일이 작아지고 화질이 떨어집니다. 스크린샷·공유용은 70~85% 권장.
+                </p>
+              </div>
+            )}
 
             {/* Resolution Scale (for PNG/JPEG) */}
             {format !== 'svg' && (
@@ -249,10 +303,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </p>
               )}
               {format === 'png' && (
-                <p>무손실 압축 포맷으로 투명 배경을 지원하며 그래픽, 로고, 아이콘에 적합합니다.</p>
+                <p>무손실 압축 포맷으로 투명 배경을 지원하며 그래픽, 로고, 아이콘에 적합합니다. 사진 성격의 캔버스라면 JPEG/WebP가 훨씬 작습니다.</p>
               )}
               {format === 'jpeg' && (
-                <p>사진 및 배경이 포함된 이미지에 최적화된 고압축 래스터 포맷입니다.</p>
+                <p>사진 및 배경이 포함된 이미지에 최적화된 고압축 래스터 포맷입니다. 품질 슬라이더로 용량을 조절하세요.</p>
+              )}
+              {format === 'webp' && (
+                <p>같은 화질에서 PNG 대비 수십~수십 분의 1 작은 고압축 포맷입니다. 투명 배경도 지원하며, 최신 앱·브라우저에서 호환됩니다.</p>
               )}
             </div>
           </div>
@@ -278,6 +335,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <span className="text-[10px] text-stone-500 mt-2 font-mono">
               {config.width} × {config.height} px ({layers.length}개 레이어, {elements.length}개 개체)
             </span>
+            {format !== 'svg' && previewUrl && (
+              <span className="text-[11px] text-amber-400/90 font-mono mt-1">
+                예상 파일 크기: {formatBytes(estimateBytesFromDataUrl(previewUrl))}
+              </span>
+            )}
           </div>
         </div>
 

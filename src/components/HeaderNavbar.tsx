@@ -316,10 +316,11 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
         </div>
       </div>
 
+      {/* Shortcuts — separated, pinned to the right end of the header line */}
       <button
         id="btn-shortcuts"
         onClick={onOpenShortcuts}
-        className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+        className="ml-auto p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
         title="단축키 안내"
       >
         <Keyboard className="w-4 h-4" />
