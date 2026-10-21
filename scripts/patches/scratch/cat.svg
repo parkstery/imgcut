@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-label="앉아 있는 노란색 고양이 그림">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#fffaf0"/>
+      <stop offset="100%" stop-color="#ffe9c6"/>
+    </radialGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8b45f"/>
+      <stop offset="100%" stop-color="#ee9a3e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경 -->
+  <rect width="400" height="400" fill="url(#bg)"/>
+
+  <!-- 그림자 -->
+  <ellipse cx="200" cy="338" rx="118" ry="20" fill="#e2b98a" opacity="0.45"/>
+
+  <!-- 꼬리 -->
+  <path d="M246 318 C304 334 334 298 322 258 C314 230 284 226 272 244"
+        fill="none" stroke="url(#fur)" stroke-width="21" stroke-linecap="round"/>
+  <path d="M246 318 C304 334 334 298 322 258 C314 230 284 226 272 244"
+        fill="none" stroke="#dd8633" stroke-width="21" stroke-linecap="round"
+        stroke-dasharray="12 30" opacity="0.75"/>
+
+  <!-- 귀 (머리 뒤) -->
+  <g stroke="#dd8633" stroke-width="4" stroke-linejoin="round">
+    <path d="M154 144 L147 90 L189 121 Z" fill="url(#fur)"/>
+    <path d="M246 144 L253 90 L211 121 Z" fill="url(#fur)"/>
+  </g>
+  <path d="M159 137 L155 106 L177 123 Z" fill="#f79aa5"/>
+  <path d="M241 137 L245 106 L223 123 Z" fill="#f79aa5"/>
+
+  <!-- 몸통 -->
+  <path d="M200 224 C158 224 143 274 146 330 L254 330 C257 274 242 224 200 224 Z"
+        fill="url(#fur)" stroke="#dd8633" stroke-width="4" stroke-linejoin="round"/>
+  <!-- 배 -->
+  <path d="M200 250 C176 250 166 288 168 330 L232 330 C234 288 224 250 200 250 Z"
+        fill="#fff1da"/>
+  <!-- 몸 줄무늬 -->
+  <g stroke="#dd8633" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.85">
+    <path d="M152 264 Q166 269 175 263"/>
+    <path d="M150 292 Q165 297 176 291"/>
+    <path d="M248 264 Q234 269 225 263"/>
+    <path d="M250 292 Q235 297 224 291"/>
+  </g>
+
+  <!-- 앞발 -->
+  <g fill="#fff1da" stroke="#dd8633" stroke-width="4">
+    <ellipse cx="176" cy="330" rx="24" ry="13"/>
+    <ellipse cx="224" cy="330" rx="24" ry="13"/>
+  </g>
+  <g stroke="#dd8633" stroke-width="3" stroke-linecap="round">
+    <path d="M170 324 v9 M182 324 v9"/>
+    <path d="M218 324 v9 M230 324 v9"/>
+  </g>
+
+  <!-- 머리 -->
+  <circle cx="200" cy="180" r="62" fill="url(#fur)" stroke="#dd8633" stroke-width="4"/>
+
+  <!-- 이마 줄무늬 -->
+  <g stroke="#dd8633" stroke-width="6" stroke-linecap="round" fill="none">
+    <path d="M176 142 Q182 131 189 142"/>
+    <path d="M195 138 Q200 127 205 138"/>
+    <path d="M211 142 Q218 131 224 142"/>
+    <path d="M152 176 Q160 182 156 192"/>
+    <path d="M248 176 Q240 182 244 192"/>
+  </g>
+
+  <!-- 눈 -->
+  <g>
+    <ellipse cx="177" cy="180" rx="11" ry="13" fill="#2c2823"/>
+    <ellipse cx="223" cy="180" rx="11" ry="13" fill="#2c2823"/>
+    <circle cx="173.5" cy="175.5" r="4" fill="#ffffff"/>
+    <circle cx="219.5" cy="175.5" r="4" fill="#ffffff"/>
+    <circle cx="180" cy="186" r="2" fill="#ffffff" opacity="0.7"/>
+    <circle cx="226" cy="186" r="2" fill="#ffffff" opacity="0.7"/>
+  </g>
+
+  <!-- 볼 -->
+  <ellipse cx="158" cy="198" rx="10" ry="6" fill="#f79aa5" opacity="0.55"/>
+  <ellipse cx="242" cy="198" rx="10" ry="6" fill="#f79aa5" opacity="0.55"/>
+
+  <!-- 코 & 입 -->
+  <path d="M193 196 L207 196 L200 204 Z" fill="#f79aa5" stroke="#e07f8c" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M200 204 Q194 214 186 208" fill="none" stroke="#c9772c" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M200 204 Q206 214 214 208" fill="none" stroke="#c9772c" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- 수염 -->
+  <g stroke="#8a6a4a" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.85">
+    <path d="M174 194 Q146 189 120 182"/>
+    <path d="M173 201 Q144 202 116 201"/>
+    <path d="M174 208 Q147 216 124 224"/>
+    <path d="M226 194 Q254 189 280 182"/>
+    <path d="M227 201 Q256 202 284 201"/>
+    <path d="M226 208 Q253 216 276 224"/>
+  </g>
+</svg>

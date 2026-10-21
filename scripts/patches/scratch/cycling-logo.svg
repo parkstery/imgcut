@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#FF8C42"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="56" fill="url(#grad)"/>
+  <!-- Bike frame -->
+  <g stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Rear wheel -->
+    <circle cx="35" cy="75" r="14"/>
+    <!-- Front wheel -->
+    <circle cx="85" cy="75" r="14"/>
+    <!-- Frame -->
+    <path d="M35 75 L50 50 L70 50 L85 75"/>
+    <path d="M50 50 L45 75"/>
+    <path d="M70 50 L65 75"/>
+    <!-- Handlebar -->
+    <path d="M70 50 L75 42"/>
+    <path d="M72 42 L78 42"/>
+    <!-- Seat -->
+    <path d="M48 48 L54 48"/>
+    <!-- Pedal -->
+    <circle cx="57" cy="63" r="3" fill="#FFFFFF"/>
+  </g>
+</svg>

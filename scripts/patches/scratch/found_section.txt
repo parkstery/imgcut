@@ -1,0 +1,358 @@
+</PropertyGroup>
+      )}
+
+      {/* TEXT SPECIFIC PROPERTIES */}
+      {isText && text && (
+        <div className="space-y-3 pt-3 border-t border-stone-800">
+          <label className="text-stone-300 font-medium block">텍스트 내용 및 서식</label>
+
+          <div>
+            <span className="text-[10px] text-stone-500 block mb-1">내용</span>
+            <textarea
+              value={text.text}
+              onChange={(e) => onUpdateElement({ ...text, text: e.target.value })}
+              rows={2}
+              className="w-full h-14 max-h-24 min-h-[2.25rem] resize-y bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-stone-100 text-xs leading-snug focus:border-amber-500 outline-none"
+            />
+          </div>
+
+          {/* Font Family */}
+          <div>
+            <span className="text-[10px] text-stone-500 block mb-1">글꼴 (Font)</span>
+            <select
+              value={text.fontFamily}
+              onChange={(e) => onUpdateElement({ ...text, fontFamily: e.target.value })}
+              className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-stone-100 text-xs focus:border-amber-500"
+            >
+              {FONT_FAMILIES.map((f) => (
+                <option key={f.name} value={f.value}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Font Size & Color */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-stone-500 block mb-1">글자 크기 (px)</span>
+              <input
+                type="number"
+                min="8"
+                max="180"
+                value={text.fontSize}
+                onChange={(e) =>
+                  onUpdateElement({ ...text, fontSize: Math.max(8, parseInt(e.target.value) || 12) })
+                }
+                className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 font-mono text-stone-100"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-stone-500 block mb-1">글자 색상</span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="color"
+                  value={text.color}
+                  onChange={(e) => onUpdateElement({ ...text, color: e.target.value })}
+                  className="w-7 h-7 rounded border border-stone-700 bg-transparent cursor-pointer"
+                />
+                <span className="font-mono text-stone-300 text-[11px]">{text.color}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Formatting: Bold, Italic, Underline, Align */}
+          <div className="flex items-center space-x-1 pt-1">
+            <button
+              onClick={() => onUpdateElement({ ...text, bold: !text.bold })}
+              className={`px-2.5 py-1.5 rounded border text-xs font-bold ${
+                text.bold ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              B
+            </button>
+            <button
+              onClick={() => onUpdateElement({ ...text, italic: !text.italic })}
+              className={`px-2.5 py-1.5 rounded border text-xs italic ${
+                text.italic ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              I
+            </button>
+            <button
+              onClick={() => onUpdateElement({ ...text, underline: !text.underline })}
+              className={`px-2.5 py-1.5 rounded border text-xs underline ${
+                text.underline ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              U
+            </button>
+
+            <div className="w-[1px] h-6 bg-stone-800 mx-1" />
+
+            <button
+              onClick={() => onUpdateElement({ ...text, align: 'left' })}
+              className={`p-1.5 rounded border ${
+                text.align === 'left' ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              <AlignLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onUpdateElement({ ...text, align: 'center' })}
+              className={`p-1.5 rounded border ${
+                text.align === 'center' ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              <AlignCenter className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onUpdateElement({ ...text, align: 'right' })}
+              className={`p-1.5 rounded border ${
+                text.align === 'right' ? 'border-amber-500 bg-amber-500/20 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              <AlignRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGE SPECIFIC PROPERTIES: Crop, Border, Corner Radius, Flip, Filters */}
+      {isImage && img && (
+        <div className="space-y-4 pt-3 border-t border-stone-800">
+          {/* 1. Picture Crop — compact controls only */}
+          <div className="space-y-1.5">
+            {croppingImageId === img.id ? (
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const crop =
+                      activeCropBox && activeCropBox.w >= 5
+                        ? activeCropBox
+                        : { x: 0, y: 0, w: img.width, h: img.height };
+                    onCutImagePart?.(img, crop);
+                  }}
+                  className="py-1.5 px-2 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1"
+                  title="오려내기 (Ctrl+X)"
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  <span>오려내기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const crop =
+                      activeCropBox && activeCropBox.w >= 5
+                        ? activeCropBox
+                        : { x: 0, y: 0, w: img.width, h: img.height };
+                    onCopyImagePart?.(img, crop);
+                  }}
+                  className="py-1.5 px-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1"
+                  title="복사 (Ctrl+C)"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>복사</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onApplyCropImage?.()}
+                  className="py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs rounded transition-colors"
+                  title="남기기 (Enter)"
+                >
+                  남기기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCancelCropImage?.()}
+                  className="py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs rounded transition-colors"
+                  title="취소 (Esc)"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onStartCropImage?.(img.id)}
+                className="w-full py-2 bg-stone-800 hover:bg-stone-700 border border-stone-700 hover:border-amber-500/50 text-stone-200 hover:text-amber-300 font-medium text-xs rounded-md transition-all flex items-center justify-center gap-1.5"
+                title="그림 자르기 (C)"
+              >
+                <Crop className="w-3.5 h-3.5 text-amber-400" />
+                <span>그림 자르기</span>
+              </button>
+            )}
+          </div>
+
+          {/* 2. Picture Border & Corner Radius (PowerPoint Style) */}
+          <div className="space-y-3 pt-1">
+            <label className="text-stone-300 font-medium block text-xs">그림 스타일 (테두리 및 모서리)</label>
+
+            {/* Corner Radius */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-stone-400">모서리 둥글기 (Radius)</span>
+                <span className="font-mono text-stone-300">{img.cornerRadius || 0}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="120"
+                value={img.cornerRadius || 0}
+                onChange={(e) =>
+                  onUpdateElement({ ...img, cornerRadius: parseInt(e.target.value) || 0 })
+                }
+                className="w-full accent-amber-500"
+              />
+              <div className="flex items-center space-x-1 pt-0.5">
+                <button
+                  onClick={() => onUpdateElement({ ...img, cornerRadius: 0 })}
+                  className={`flex-1 py-0.5 rounded border text-[10px] ${
+                    !img.cornerRadius ? 'border-amber-500 text-amber-300' : 'border-stone-800 text-stone-400'
+                  }`}
+                >
+                  각진 모서리 (0px)
+                </button>
+                <button
+                  onClick={() => onUpdateElement({ ...img, cornerRadius: 24 })}
+                  className={`flex-1 py-0.5 rounded border text-[10px] ${
+                    img.cornerRadius === 24 ? 'border-amber-500 text-amber-300' : 'border-stone-800 text-stone-400'
+                  }`}
+                >
+                  둥근 모서리 (24px)
+                </button>
+                <button
+                  onClick={() => onUpdateElement({ ...img, cornerRadius: Math.min(img.width, img.height) / 2 })}
+                  className={`flex-1 py-0.5 rounded border text-[10px] ${
+                    img.cornerRadius && img.cornerRadius >= Math.min(img.width, img.height) / 2 - 2
+                      ? 'border-amber-500 text-amber-300'
+                      : 'border-stone-800 text-stone-400'
+                  }`}
+                >
+                  원형 / 알약
+                </button>
+              </div>
+            </div>
+
+            {/* Border Width & Color */}
+            <div className="space-y-1 pt-1">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-stone-400">그림 외곽 테두리 (Border)</span>
+                <span className="font-mono text-stone-300">{img.borderWidth || 0}px</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="color"
+                  value={img.borderColor || '#000000'}
+                  onChange={(e) => onUpdateElement({ ...img, borderColor: e.target.value })}
+                  className="w-7 h-7 rounded border border-stone-700 bg-transparent cursor-pointer"
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  value={img.borderWidth || 0}
+                  onChange={(e) =>
+                    onUpdateElement({ ...img, borderWidth: parseInt(e.target.value) || 0 })
+                  }
+                  className="flex-1 accent-amber-500"
+                />
+                <span className="text-xs font-mono text-stone-400 w-8 text-right">{img.borderWidth || 0}px</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Image Correction & Filters */}
+          <div className="space-y-3 pt-2 border-t border-stone-800">
+            <div className="flex items-center justify-between">
+              <label className="text-stone-300 font-medium flex items-center space-x-1">
+                <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                <span>이미지 보정 및 필터</span>
+              </label>
+              <button
+                onClick={() =>
+                  onUpdateElement({
+                    ...img,
+                    filters: {
+                      brightness: 100,
+                      contrast: 100,
+                      saturation: 100,
+                      blur: 0,
+                      grayscale: 0,
+                      invert: 0,
+                    },
+                  })
+                }
+                className="text-[10px] text-amber-400 hover:underline"
+              >
+                필터 초기화
+              </button>
+            </div>
+
+          {/* Flip Buttons */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onUpdateElement({ ...img, flipH: !img.flipH })}
+              className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] ${
+                img.flipH ? 'border-amber-500 bg-amber-500/10 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              <FlipHorizontal className="w-3.5 h-3.5" />
+              <span>좌우 반전</span>
+            </button>
+            <button
+              onClick={() => onUpdateElement({ ...img, flipV: !img.flipV })}
+              className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] ${
+                img.flipV ? 'border-amber-500 bg-amber-500/10 text-amber-300' : 'border-stone-800 text-stone-400'
+              }`}
+            >
+              <FlipVertical className="w-3.5 h-3.5" />
+              <span>상하 반전</span>
+            </button>
+          </div>
+
+          {/* Filter sliders — compact single-row: short label | slider | value */}
+          <div className="space-y-1 pt-1 text-[11px]">
+            {(
+              [
+                { key: 'brightness' as const, label: '밝기', min: 0, max: 200, unit: '%' },
+                { key: 'contrast' as const, label: '대비', min: 0, max: 200, unit: '%' },
+                { key: 'saturation' as const, label: '채도', min: 0, max: 200, unit: '%' },
+                { key: 'blur' as const, label: '흐림', min: 0, max: 20, unit: 'px' },
+                { key: 'grayscale' as const, label: '흑백', min: 0, max: 100, unit: '%' },
+                { key: 'invert' as const, label: '반전', min: 0, max: 100, unit: '%' },
+              ] as const
+            ).map((row) => (
+              <div key={row.key} className="flex items-center gap-2">
+                <span className="w-7 shrink-0 text-stone-400 text-[11px]">{row.label}</span>
+                <input
+                  type="range"
+                  min={row.min}
+                  max={row.max}
+                  value={img.filters[row.key]}
+                  onChange={(e) =>
+                    onUpdateElement({
+                      ...img,
+                      filters: {
+                        ...img.filters,
+                        [row.key]: parseInt(e.target.value, 10),
+                      },
+                    })
+                  }
+                  className="flex-1 min-w-0 accent-amber-500 h-1.5"
+                  title={`${row.label} ${img.filters[row.key]}${row.unit}`}
+                />
+                <span className="w-9 shrink-0 text-right font-mono text-[10px] text-stone-400 tabular-nums">
+                  {img.filters[row.key]}
+                  {row.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* DROP SHADOW (Supports all elements) */}
+      
