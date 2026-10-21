@@ -12,6 +12,8 @@ import {
   ImageElement,
   HandleType,
   ShapeStylePreset,
+  RadialToolState,
+  RadialStep,
 } from '../types';
 import { getShapePath, getPolylinePath, finalizePolylineGeometry, getArcPath, computeArcFromChordAndBend, finalizeArcGeometry } from '../utils/shapeGenerators';
 import { generateBrushSmoothPath } from '../utils/svgExport';
@@ -69,7 +71,139 @@ interface CanvasAreaProps {
   onStartCropImage?: (id: string) => void;
   onFinishCropImage?: () => void;
   onInsertImage?: (file: File) => void;
+  // Radial Tool
+  radialToolState?: RadialToolState;
+  onRadialSetCenter?: (x: number, y: number) => void;
+  onRadialUpdateRadius?: (radius: number, angle?: number) => void;
+  /** Lock / unlock the radius (the radius follows the cursor while unlocked) */
+  onRadialSetStep?: (step: RadialStep) => void;
 }
+
+/**
+ * One copy of the radial array, drawn in a semi-transparent preview state.
+ * Mirrors the element rendering of the canvas stage.
+ */
+const RadialPreviewItem: React.FC<{ el: CanvasElement }> = ({ el }) => {
+  const rot = el.rotation || 0;
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const flipT =
+    el.flipH || el.flipV
+      ? `translate(${cx} ${cy}) scale(${el.flipH ? -1 : 1} ${el.flipV ? -1 : 1}) translate(${-cx} ${-cy})`
+      : undefined;
+  const isStrokeOnly =
+    el.type === 'shape' &&
+    (el.shapeType === 'line' ||
+      el.shapeType.startsWith('line-arrow') ||
+      el.shapeType === 'polyline' ||
+      el.shapeType === 'arc');
+
+  return (
+    <g transform={flipT} opacity={0.7}>
+      {el.type === 'shape' && (
+        <g
+          transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${
+            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
+              ? `0 ${el.height / 2}`
+              : `${el.width / 2} ${el.height / 2}`
+          })`}
+        >
+          <path
+            d={
+              el.shapeType === 'polyline' && el.points && el.points.length >= 2
+                ? getPolylinePath(el.points)
+                : el.shapeType === 'arc' &&
+                  el.points &&
+                  el.points.length >= 2 &&
+                  el.arcRadius != null
+                ? getArcPath(
+                    el.points[0],
+                    el.points[1],
+                    el.arcRadius,
+                    !!el.arcLarge,
+                    !!el.arcSweep
+                  )
+                : getShapePath(el.shapeType, el.width, el.height, el.cornerRadius)
+            }
+            fill={isStrokeOnly ? 'none' : el.fill}
+            stroke={el.stroke}
+            strokeWidth={el.strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={
+              el.strokeDash === 'dashed' ? '8 6' : el.strokeDash === 'dotted' ? '3 4' : undefined
+            }
+            opacity={el.opacity}
+          />
+        </g>
+      )}
+
+      {el.type === 'brush' && (
+        <path
+          d={generateBrushSmoothPath(el.points)}
+          fill="none"
+          stroke={el.color}
+          strokeWidth={el.strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={el.isHighlighter ? el.opacity * 0.45 : el.opacity}
+        />
+      )}
+
+      {el.type === 'text' && (
+        <g transform={rot !== 0 ? `rotate(${rot} ${cx} ${cy})` : undefined}>
+          <text
+            x={el.align === 'center' ? cx : el.align === 'right' ? el.x + el.width : el.x}
+            y={el.y + el.fontSize}
+            fontFamily={el.fontFamily}
+            fontSize={el.fontSize}
+            fontWeight={el.bold ? 'bold' : 'normal'}
+            fontStyle={el.italic ? 'italic' : 'normal'}
+            textDecoration={el.underline ? 'underline' : 'none'}
+            fill={el.color}
+            textAnchor={
+              el.align === 'center' ? 'middle' : el.align === 'right' ? 'end' : 'start'
+            }
+            opacity={el.opacity}
+          >
+            {el.text.split('\n').map((line, i) => (
+              <tspan
+                key={i}
+                x={
+                  el.align === 'center'
+                    ? cx
+                    : el.align === 'right'
+                    ? el.x + el.width
+                    : el.x
+                }
+                dy={i === 0 ? 0 : el.fontSize * 1.3}
+              >
+                {line.length === 0 ? '\u00A0' : line}
+              </tspan>
+            ))}
+          </text>
+        </g>
+      )}
+
+      {el.type === 'image' && (
+        <g transform={rot !== 0 ? `rotate(${rot} ${cx} ${cy})` : undefined}>
+          <image
+            href={el.src}
+            x={el.x}
+            y={el.y}
+            width={el.width}
+            height={el.height}
+            preserveAspectRatio="none"
+            opacity={el.opacity}
+            style={{
+              filter: `brightness(${el.filters.brightness}%) contrast(${el.filters.contrast}%) saturate(${el.filters.saturation}%) blur(${el.filters.blur}px) grayscale(${el.filters.grayscale}%) invert(${el.filters.invert}%)`,
+            }}
+          />
+        </g>
+      )}
+    </g>
+  );
+};
 
 export const CanvasArea: React.FC<CanvasAreaProps> = ({
   config,
@@ -108,6 +242,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   onStartCropImage,
   onFinishCropImage,
   onInsertImage,
+  radialToolState,
+  onRadialSetCenter,
+  onRadialUpdateRadius,
+  onRadialSetStep,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 40, y: 40 });
@@ -482,7 +620,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     // Only show line endpoint handles for a single selection
     if (selectedElementIds.length !== 1) return null;
     if (!selectedElement || selectedElement.type !== 'shape') return null;
-    if (selectedElement.shapeType !== 'line' && selectedElement.shapeType !== 'line-arrow') return null;
+    if (selectedElement.shapeType !== 'line' && !selectedElement.shapeType.startsWith('line-arrow')) return null;
     const sx = selectedElement.x;
     const sy = selectedElement.y + selectedElement.height / 2;
     const rad = ((selectedElement.rotation || 0) * Math.PI) / 180;
@@ -612,6 +750,24 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       setIsDrawing(true);
       setDrawStart(pt);
       setCropBox({ x: pt.x, y: pt.y, w: 0, h: 0 });
+      return;
+    }
+
+    // Radial Object Tool
+    if (currentTool === 'radial') {
+      if (activeLayer.locked) return;
+      const step = radialToolState?.step;
+
+      if (step === 'placing_center') {
+        // First click: place the center of the array.
+        onRadialSetCenter?.(pt.x, pt.y);
+        return;
+      }
+
+      if (step === 'adjusting_radius' || step === 'preview') {
+        // Clicking toggles between "radius follows the cursor" and "locked".
+        onRadialSetStep?.(step === 'preview' ? 'adjusting_radius' : 'preview');
+      }
       return;
     }
 
@@ -1003,6 +1159,19 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
+    // Radial Tool: the radius follows the cursor while it is not locked
+    if (currentTool === 'radial') {
+      const center = radialToolState?.center;
+      if (radialToolState?.step === 'adjusting_radius' && center) {
+        const dx = pt.x - center.x;
+        const dy = pt.y - center.y;
+        const newRadius = Math.max(1, Math.hypot(dx, dy));
+        const newAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        onRadialUpdateRadius?.(newRadius, newAngle);
+      }
+      return;
+    }
+
     // Panning canvas
     if (isPanning) {
       setPan({
@@ -1035,7 +1204,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     }
 
     // Active line preview drag
-    if (isDrawing && currentTool === 'shape' && (selectedShapeType === 'line' || selectedShapeType === 'line-arrow')) {
+    if (
+      isDrawing &&
+      currentTool === 'shape' &&
+      (selectedShapeType === 'line' || selectedShapeType.startsWith('line-arrow'))
+    ) {
       let targetPt = config.snapToGrid ? { x: snapValue(pt.x), y: snapValue(pt.y) } : pt;
       if (e.shiftKey) {
         // Snap line angle to 0, 45, 90, 135, 180, 225, 270, 315 degrees
@@ -1424,7 +1597,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     }
 
     // Finish LINE Shape creation (Direct Start Point to End Point)
-    if (isDrawing && currentTool === 'shape' && (selectedShapeType === 'line' || selectedShapeType === 'line-arrow')) {
+    if (
+      isDrawing &&
+      currentTool === 'shape' &&
+      (selectedShapeType === 'line' || selectedShapeType.startsWith('line-arrow'))
+    ) {
       const endPt = linePreviewEnd || drawStart;
       let startX = drawStart.x;
       let startY = drawStart.y;
@@ -1449,10 +1626,18 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       const thickness = Math.max(strokeW * 4, 16);
       const lineStroke = (lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none') ? lastShapeStyle.stroke : (primaryColor || '#000000');
 
+      const arrowNameMap: Record<string, string> = {
+        'line-arrow': '끝 화살표',
+        'line-arrow-both': '양끝 화살표',
+        'line-arrow-start': '시작 화살표',
+        'line-arrow-open': '열린 화살표',
+        'line-arrow-dot': '끝 점 화살표',
+        'line-arrow-diamond': '마름모 화살표',
+      };
       const newLineShape: ShapeElement = {
         id: 'shape-line-' + Date.now(),
         layerId: activeLayer.id,
-        name: selectedShapeType === 'line-arrow' ? '화살표 선' : '직선',
+        name: arrowNameMap[selectedShapeType] || (selectedShapeType === 'line' ? '직선' : '화살표 선'),
         type: 'shape',
         shapeType: selectedShapeType,
         x: Math.round(startX),
@@ -1481,7 +1666,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       currentTool === 'shape' &&
       previewRect &&
       selectedShapeType !== 'line' &&
-      selectedShapeType !== 'line-arrow' &&
+      !selectedShapeType.startsWith('line-arrow') &&
       selectedShapeType !== 'polyline' &&
       selectedShapeType !== 'arc'
     ) {
@@ -1755,7 +1940,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     let lineEnd: Point | undefined;
     if (
       selectedElement.type === 'shape' &&
-      (selectedElement.shapeType === 'line' || selectedElement.shapeType === 'line-arrow')
+      (selectedElement.shapeType === 'line' || selectedElement.shapeType.startsWith('line-arrow'))
     ) {
       const sx = selectedElement.x;
       const sy = selectedElement.y + selectedElement.height / 2;
@@ -2043,10 +2228,15 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   const isSelected = selectedElementIds.includes(el.id);
                   const rot = el.rotation || 0;
                   const filterAttr = el.shadow?.enabled ? `url(#shadow-${el.id})` : undefined;
+                  const flipT =
+                    el.flipH || el.flipV
+                      ? `translate(${el.x + el.width / 2} ${el.y + el.height / 2}) scale(${el.flipH ? -1 : 1} ${el.flipV ? -1 : 1}) translate(${-(el.x + el.width / 2)} ${-(el.y + el.height / 2)})`
+                      : undefined;
 
                   return (
                     <g
                       key={el.id}
+                      transform={flipT}
                       onMouseDown={(e) => handleElementMouseDown(el, e)}
                       onDoubleClick={() => handleElementDoubleClick(el)}
                       style={{ pointerEvents: isSelectOrElementTool ? 'all' : 'none' }}
@@ -2056,13 +2246,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       {el.type === 'shape' && (
                         <g
                           transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${
-                            el.shapeType === 'line' || el.shapeType === 'line-arrow'
+                            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
                               ? `0 ${el.height / 2}`
                               : `${el.width / 2} ${el.height / 2}`
                           })`}
                         >
                           {/* Invisible Extra-Wide Hitbox for 1-Click Selection */}
-                          {el.shapeType === 'line' || el.shapeType === 'line-arrow' ? (
+                          {el.shapeType === 'line' || el.shapeType.startsWith('line-arrow') ? (
                             <line
                               x1={0}
                               y1={el.height / 2}
@@ -2284,12 +2474,6 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                             className={currentTool === 'select' ? 'cursor-pointer' : ''}
                             style={{
                               filter: `brightness(${el.filters.brightness}%) contrast(${el.filters.contrast}%) saturate(${el.filters.saturation}%) blur(${el.filters.blur}px) grayscale(${el.filters.grayscale}%) invert(${el.filters.invert}%)`,
-                              transform: `${el.flipH ? 'scaleX(-1)' : ''} ${
-                                el.flipV ? 'scaleY(-1)' : ''
-                              }`,
-                              transformOrigin: `${el.x + el.width / 2}px ${
-                                el.y + el.height / 2
-                              }px`,
                             }}
                           />
                           {/* Optional Picture Border */}
@@ -2325,7 +2509,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                           transform={
                             rot !== 0
                               ? `rotate(${rot} ${
-                                  el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'line-arrow')
+                                  el.type === 'shape' && (el.shapeType === 'line' || el.shapeType.startsWith('line-arrow'))
                                     ? `${el.x} ${el.y + el.height / 2}`
                                     : `${el.x + el.width / 2} ${el.y + el.height / 2}`
                                 })`
@@ -2340,7 +2524,57 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             );
           })}
 
-          {/* Active Brush Stroke Live Drawing Preview */}
+        {/* Radial Array (방사상 배열) – guide + live preview of the copies */}
+        {radialToolState && radialToolState.step !== 'idle' && (
+          <g pointerEvents="none">
+            {radialToolState.center && (
+              <>
+                {/* Radius guide */}
+                <circle
+                  cx={radialToolState.center.x}
+                  cy={radialToolState.center.y}
+                  r={radialToolState.radius}
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  opacity={0.7}
+                />
+                {/* Spokes towards every copy */}
+                {radialToolState.previewElements.map((el) => {
+                  const dx = el.x + el.width / 2 - radialToolState.center!.x;
+                  const dy = el.y + el.height / 2 - radialToolState.center!.y;
+                  return (
+                    <line
+                      key={`spoke-${el.id}`}
+                      x1={radialToolState.center!.x}
+                      y1={radialToolState.center!.y}
+                      x2={radialToolState.center!.x + dx}
+                      y2={radialToolState.center!.y + dy}
+                      stroke="#F59E0B"
+                      strokeWidth={0.75}
+                      opacity={0.45}
+                    />
+                  );
+                })}
+                {/* Center marker */}
+                <circle
+                  cx={radialToolState.center.x}
+                  cy={radialToolState.center.y}
+                  r={4}
+                  fill="#F59E0B"
+                  stroke="#1C1917"
+                  strokeWidth={1}
+                />
+              </>
+            )}
+            {radialToolState.previewElements.map((el) => (
+              <RadialPreviewItem key={el.id} el={el} />
+            ))}
+          </g>
+        )}
+
+        {/* Active Brush Stroke Live Drawing Preview */}
           {isDrawing && currentPoints.length > 1 && (
             <path
               d={generateBrushSmoothPath(currentPoints)}
@@ -2356,7 +2590,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           )}
 
           {/* Active LINE Live Drawing Preview (Direct from start to end) */}
-          {isDrawing && currentTool === 'shape' && (selectedShapeType === 'line' || selectedShapeType === 'line-arrow') && linePreviewEnd && (() => {
+          {isDrawing &&
+            currentTool === 'shape' &&
+            (selectedShapeType === 'line' || selectedShapeType.startsWith('line-arrow')) &&
+            linePreviewEnd && (() => {
             const activeLineStroke = (lastShapeStyle.stroke && lastShapeStyle.stroke !== 'none') ? lastShapeStyle.stroke : (primaryColor || '#000000');
             const activeStrokeW = (lastShapeStyle.strokeWidth && lastShapeStyle.strokeWidth > 0) ? lastShapeStyle.strokeWidth : (strokeWidth || 2);
             return (
@@ -2371,7 +2608,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   strokeLinecap="round"
                   strokeDasharray="6 4"
                 />
-                {selectedShapeType === 'line-arrow' && (() => {
+                {['line-arrow', 'line-arrow-both', 'line-arrow-start', 'line-arrow-open'].includes(selectedShapeType) && (() => {
                   const dx = linePreviewEnd.x - drawStart.x;
                   const dy = linePreviewEnd.y - drawStart.y;
                   const len = Math.hypot(dx, dy);
@@ -2380,18 +2617,87 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   const headSize = Math.min(18, Math.max(10, len * 0.2));
                   const a1 = angle - Math.PI / 6;
                   const a2 = angle + Math.PI / 6;
-                  const x1 = linePreviewEnd.x - headSize * Math.cos(a1);
-                  const y1 = linePreviewEnd.y - headSize * Math.sin(a1);
-                  const x2 = linePreviewEnd.x - headSize * Math.cos(a2);
-                  const y2 = linePreviewEnd.y - headSize * Math.sin(a2);
-                  return (
+
+                  const endArrow = (
                     <path
-                      d={`M ${x1} ${y1} L ${linePreviewEnd.x} ${linePreviewEnd.y} L ${x2} ${y2}`}
-                      fill="none"
+                      d={`M ${linePreviewEnd.x - headSize * Math.cos(a1)} ${linePreviewEnd.y - headSize * Math.sin(a1)} L ${linePreviewEnd.x} ${linePreviewEnd.y} L ${linePreviewEnd.x - headSize * Math.cos(a2)} ${linePreviewEnd.y - headSize * Math.sin(a2)}`}
+                      fill={selectedShapeType === 'line-arrow-open' ? 'none' : activeLineStroke}
                       stroke={activeLineStroke}
                       strokeWidth={activeStrokeW}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                    />
+                  );
+
+                  const startArrow =
+                    selectedShapeType === 'line-arrow-both' || selectedShapeType === 'line-arrow-start'
+                      ? (() => {
+                          const x1 = drawStart.x + headSize * Math.cos(a1);
+                          const y1 = drawStart.y + headSize * Math.sin(a1);
+                          const x2 = drawStart.x + headSize * Math.cos(a2);
+                          const y2 = drawStart.y + headSize * Math.sin(a2);
+                          return (
+                            <path
+                              d={`M ${x1} ${y1} L ${drawStart.x} ${drawStart.y} L ${x2} ${y2}`}
+                              fill={selectedShapeType === 'line-arrow-open' ? 'none' : activeLineStroke}
+                              stroke={activeLineStroke}
+                              strokeWidth={activeStrokeW}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          );
+                        })()
+                      : null;
+
+                  return (
+                    <>
+                      {endArrow}
+                      {startArrow}
+                    </>
+                  );
+                })()}
+
+                {/* line-arrow-dot preview */}
+                {selectedShapeType === 'line-arrow-dot' && (() => {
+                  const dx = linePreviewEnd.x - drawStart.x;
+                  const dy = linePreviewEnd.y - drawStart.y;
+                  const len = Math.hypot(dx, dy);
+                  if (len < 6) return null;
+                  const dotR = 5;
+                  return (
+                    <circle
+                      cx={linePreviewEnd.x}
+                      cy={linePreviewEnd.y}
+                      r={dotR}
+                      fill={activeLineStroke}
+                      stroke="#000000"
+                      strokeWidth={1}
+                    />
+                  );
+                })()}
+
+                {/* line-arrow-diamond preview */}
+                {selectedShapeType === 'line-arrow-diamond' && (() => {
+                  const dx = linePreviewEnd.x - drawStart.x;
+                  const dy = linePreviewEnd.y - drawStart.y;
+                  const len = Math.hypot(dx, dy);
+                  if (len < 6) return null;
+                  const angle = Math.atan2(dy, dx);
+                  const d = 8;
+                  const x1 = linePreviewEnd.x - d * Math.cos(angle - Math.PI / 2) * 0.6;
+                  const y1 = linePreviewEnd.y - d * Math.sin(angle - Math.PI / 2) * 0.6;
+                  const x2 = linePreviewEnd.x + d * Math.cos(angle);
+                  const y2 = linePreviewEnd.y + d * Math.sin(angle);
+                  const x3 = linePreviewEnd.x - d * Math.cos(angle + Math.PI / 2) * 0.6;
+                  const y3 = linePreviewEnd.y - d * Math.sin(angle + Math.PI / 2) * 0.6;
+                  const x4 = linePreviewEnd.x - d * Math.cos(angle);
+                  const y4 = linePreviewEnd.y - d * Math.sin(angle);
+                  return (
+                    <path
+                      d={`M ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3} L ${x4} ${y4} Z`}
+                      fill={activeLineStroke}
+                      stroke={activeLineStroke}
+                      strokeWidth={1}
                     />
                   );
                 })()}

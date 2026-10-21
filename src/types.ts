@@ -12,6 +12,11 @@ export type ShapeType =
   | 'hexagon'
   | 'line'
   | 'line-arrow'
+  | 'line-arrow-both'
+  | 'line-arrow-start'
+  | 'line-arrow-open'
+  | 'line-arrow-dot'
+  | 'line-arrow-diamond'
   | 'polyline'
   | 'arc';
 
@@ -39,6 +44,9 @@ export interface BaseElement {
   locked?: boolean;
   visible?: boolean;
   shadow?: ShadowSettings;
+  /** Mirror the element about its own center (any element type) */
+  flipH?: boolean;
+  flipV?: boolean;
 }
 
 export interface GradientSettings {
@@ -120,8 +128,6 @@ export interface ImageElement extends BaseElement {
   naturalWidth: number;
   naturalHeight: number;
   filters: ImageFilters;
-  flipH?: boolean;
-  flipV?: boolean;
   /** When true, mouse/numeric resize keeps width:height ratio */
   lockAspectRatio?: boolean;
   cornerRadius?: number;
@@ -153,7 +159,8 @@ export type ToolType =
   | 'text'
   | 'eyedropper'
   | 'fill'
-  | 'crop';
+  | 'crop'
+  | 'radial';
 
 export interface CanvasConfig {
   width: number;
@@ -170,6 +177,33 @@ export interface HistorySnapshot {
   layers: Layer[];
   activeLayerId: string;
   canvasConfig: CanvasConfig;
+}
+
+/** Radial array (방사상 배열) tool – workflow stage */
+export type RadialStep =
+  | 'idle' // tool not active
+  | 'placing_center' // waiting for the first click (center point)
+  | 'adjusting_radius' // dragging to set the radius
+  | 'preview'; // preview shown, waiting for confirm / cancel
+
+export interface RadialToolState {
+  step: RadialStep;
+  /** Center of the array in canvas coordinates */
+  center?: Point;
+  /** Distance from the center to each copy */
+  radius: number;
+  /** Number of copies (2-50) */
+  count: number;
+  /** Angle of the first copy, in degrees */
+  startAngle: number;
+  /** Angular span covered by the array, in degrees (0-360) */
+  sweepAngle: number;
+  /** Rotate each copy so it faces away from the center */
+  rotateObjects: boolean;
+  /** Element that gets replicated */
+  sourceElement?: CanvasElement;
+  /** Live preview of the copies */
+  previewElements: CanvasElement[];
 }
 
 export type HandleType =

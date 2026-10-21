@@ -354,6 +354,72 @@ export function getShapePath(
       `.replace(/\s+/g, ' ').trim();
     }
 
+    case 'line-arrow-both': {
+      // Line with arrowheads at both ends
+      const headSize = Math.min(14, Math.max(8, w * 0.2));
+      return `
+        M 0 ${h / 2}
+        L ${w} ${h / 2}
+        M ${headSize} ${h / 2 - headSize * 0.6}
+        L 0 ${h / 2}
+        L ${headSize} ${h / 2 + headSize * 0.6}
+        M ${w - headSize} ${h / 2 - headSize * 0.6}
+        L ${w} ${h / 2}
+        L ${w - headSize} ${h / 2 + headSize * 0.6}
+      `.replace(/\s+/g, ' ').trim();
+    }
+
+    case 'line-arrow-start': {
+      // Line with arrowhead at start
+      const headSize = Math.min(14, Math.max(8, w * 0.2));
+      return `
+        M 0 ${h / 2}
+        L ${w} ${h / 2}
+        M ${headSize} ${h / 2 - headSize * 0.6}
+        L 0 ${h / 2}
+        L ${headSize} ${h / 2 + headSize * 0.6}
+      `.replace(/\s+/g, ' ').trim();
+    }
+
+    case 'line-arrow-open': {
+      // Line with open arrowhead (V shape) at end
+      const headSize = Math.min(14, Math.max(8, w * 0.2));
+      return `
+        M 0 ${h / 2}
+        L ${w} ${h / 2}
+        M ${w - headSize} ${h / 2 - headSize * 0.6}
+        L ${w} ${h / 2}
+        L ${w - headSize} ${h / 2 + headSize * 0.6}
+      `.replace(/\s+/g, ' ').trim();
+    }
+
+    case 'line-arrow-dot': {
+      // Line with dot at end
+      const dotR = Math.min(6, Math.max(3, w * 0.08));
+      return `
+        M 0 ${h / 2}
+        L ${w - dotR} ${h / 2}
+        M ${w} ${h / 2}
+        m -${dotR} 0
+        a ${dotR} ${dotR} 0 1 0 ${dotR * 2} 0
+        a ${dotR} ${dotR} 0 1 0 -${dotR * 2} 0
+      `.replace(/\s+/g, ' ').trim();
+    }
+
+    case 'line-arrow-diamond': {
+      // Line with diamond at end
+      const d = Math.min(12, Math.max(6, w * 0.15));
+      return `
+        M 0 ${h / 2}
+        L ${w - d} ${h / 2}
+        M ${w - d} ${h / 2}
+        L ${w} ${h / 2 - d * 0.6}
+        L ${w + d} ${h / 2}
+        L ${w} ${h / 2 + d * 0.6}
+        Z
+      `.replace(/\s+/g, ' ').trim();
+    }
+
     case 'polyline':
       // Path is built from ShapeElement.points via getPolylinePath
       return `M 0 0 L ${w} ${h}`;

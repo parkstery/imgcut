@@ -63,14 +63,19 @@ export function generateSVGString(
       const rot = el.rotation || 0;
       const cx = el.x + el.width / 2;
       const cy = el.y + el.height / 2;
-      const transform = rot !== 0 ? `transform="rotate(${rot} ${cx} ${cy})"` : '';
+      const sx = el.flipH ? -1 : 1;
+      const sy = el.flipV ? -1 : 1;
+      const flipAttr =
+        el.flipH || el.flipV
+          ? `translate(${cx} ${cy}) scale(${sx} ${sy}) translate(${-cx} ${-cy}) `
+          : '';
       const filterAttr = el.shadow?.enabled ? `filter="url(#shadow-${el.id})"` : '';
 
       switch (el.type) {
         case 'shape': {
           const isLine =
             el.shapeType === 'line' ||
-            el.shapeType === 'line-arrow' ||
+            el.shapeType.startsWith('line-arrow') ||
             el.shapeType === 'polyline' ||
             el.shapeType === 'arc';
           const pathD =
@@ -97,13 +102,13 @@ export function generateSVGString(
           if (el.strokeDash === 'dotted') dashAttr = 'stroke-dasharray="3 4"';
 
           const rotOrigin =
-            el.shapeType === 'line' || el.shapeType === 'line-arrow'
+            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
               ? `0 ${el.height / 2}`
               : `${el.width / 2} ${el.height / 2}`;
           const rotAttr = rot !== 0 ? `transform="rotate(${rot} ${rotOrigin})"` : '';
           const lineCaps = isLine ? 'stroke-linecap="round" stroke-linejoin="round"' : '';
 
-          content += `    <g transform="translate(${el.x}, ${el.y})">\n`;
+          content += `    <g transform="${flipAttr}translate(${el.x}, ${el.y})">\n`;
           content += `      <path d="${pathD}" fill="${fillAttr}" stroke="${el.stroke}" stroke-width="${el.strokeWidth}" ${lineCaps} ${dashAttr} opacity="${el.opacity}" ${filterAttr} ${rotAttr} />\n`;
           content += `    </g>\n`;
           break;
@@ -116,7 +121,9 @@ export function generateSVGString(
           const opacity = el.isHighlighter ? el.opacity * 0.4 : el.opacity;
           const d = generateBrushSmoothPath(el.points);
 
-          content += `    <path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" ${filterAttr} />\n`;
+          content += `    <g transform="${flipAttr}">\n`;
+          content += `      <path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" ${filterAttr} />\n`;
+          content += `    </g>\n`;
           break;
         }
 
@@ -135,7 +142,7 @@ export function generateSVGString(
           const fontWeight = el.bold ? 'bold' : 'normal';
           const textDeco = el.underline ? 'underline' : 'none';
 
-          content += `    <text x="${textX}" y="${el.y + el.fontSize}" font-family="${encodeXML(el.fontFamily)}" font-size="${el.fontSize}" font-style="${fontStyle}" font-weight="${fontWeight}" text-decoration="${textDeco}" fill="${el.color}" text-anchor="${textAnchor}" opacity="${el.opacity}" ${transform} ${filterAttr}>\n`;
+          content += `    <text transform="${flipAttr}${rot !== 0 ? `rotate(${rot} ${cx} ${cy})` : ''}" x="${textX}" y="${el.y + el.fontSize}" font-family="${encodeXML(el.fontFamily)}" font-size="${el.fontSize}" font-style="${fontStyle}" font-weight="${fontWeight}" text-decoration="${textDeco}" fill="${el.color}" text-anchor="${textAnchor}" opacity="${el.opacity}" ${filterAttr}>\n`;
           const lines = el.text.split('\n');
           lines.forEach((line, i) => {
             const dy = i === 0 ? 0 : el.fontSize * 1.3;
@@ -149,7 +156,7 @@ export function generateSVGString(
         case 'image': {
           const f = el.filters;
           const filterStyle = `filter: brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) grayscale(${f.grayscale}%) invert(${f.invert}%);`;
-          content += `    <image href="${el.src}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" preserveAspectRatio="none" style="${filterStyle}" opacity="${el.opacity}" ${transform} ${filterAttr} />\n`;
+          content += `    <image href="${el.src}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" preserveAspectRatio="none" style="${filterStyle}" opacity="${el.opacity}" transform="${flipAttr}${rot !== 0 ? `rotate(${rot} ${cx} ${cy})` : ''}" ${filterAttr} />\n`;
           break;
         }
       }

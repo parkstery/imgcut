@@ -8,6 +8,9 @@ import {
   HistorySnapshot,
   ImageElement,
   ShapeStylePreset,
+  Point,
+  RadialToolState,
+  RadialStep,
 } from './types';
 import { HeaderNavbar } from './components/HeaderNavbar';
 import { Toolbar } from './components/Toolbar';
@@ -24,7 +27,9 @@ import {
   extractImageSlice,
   getImageLocalIntersection,
   punchHoleInImageElement,
+  removeImageBackground,
 } from './utils/imageEdit';
+import { buildRadialPreview, normalizeAngle } from './utils/radialArray';
 
 const INITIAL_CONFIG: CanvasConfig = {
   width: 1280,
@@ -210,20 +215,167 @@ export default function App() {
     [croppingImageId]
   );
 
+  // Radial Object Tool State
+  const [radialToolState, setRadialToolState] = useState<RadialToolState>({
+    step: 'idle',
+    radius: 100,
+    count: 8,
+    startAngle: 0,
+    sweepAngle: 360,
+    rotateObjects: false,
+    previewElements: [],
+  });
+  /** True once the start angle is decided (first drag, or a manual panel edit) */
+  const radialAngleLockedRef = useRef(false);
+
+  // ---------------------------------------------------------------------
+  // Radial Object Tool (방사상 배열)
+  // ---------------------------------------------------------------------
+  /** Enter the radial tool with `source` as the element that gets replicated. */
+  const handleRadialStart = useCallback(
+    (source: CanvasElement) => {
+      radialAngleLockedRef.current = false;
+      const baseSize = Math.max(source.width, source.height, 24);
+      setRadialToolState({
+        step: 'placing_center',
+        radius: Math.round(baseSize * 1.5),
+        count: 8,
+        startAngle: 0,
+        sweepAngle: 360,
+        rotateObjects: false,
+        sourceElement: source,
+        previewElements: [],
+      });
+      showToast('캔버스를 클릭해 중심점을 지정하세요. 드래그로 반지름을 정합니다.');
+    },
+    [showToast]
+  );
+
+  /** First click: the center of the array is placed. */
+  const handleRadialSetCenter = useCallback((x: number, y: number) => {
+    radialAngleLockedRef.current = false;
+    setRadialToolState((prev) => ({
+      ...prev,
+      step: 'adjusting_radius',
+      center: { x, y },
+      previewElements: [],
+    }));
+  }, []);
+
+  /** Lock / unlock the radius (while unlocked it follows the cursor). */
+  const handleRadialSetStep = useCallback((step: RadialStep) => {
+    setRadialToolState((prev) => ({ ...prev, step }));
+  }, []);
+
+  /**
+   * Live-update the radius.
+   * The very first drag after the center is placed also decides the start angle.
+   */
+  const handleRadialUpdateRadius = useCallback((radius: number, angle?: number) => {
+    const takeAngle = !radialAngleLockedRef.current && angle !== undefined;
+    if (takeAngle) radialAngleLockedRef.current = true;
+
+    setRadialToolState((prev) => ({
+      ...prev,
+      radius: Math.max(1, radius),
+      startAngle: takeAngle ? normalizeAngle(angle as number) : prev.startAngle,
+    }));
+  }, []);
+
+  const handleRadialUpdateCount = useCallback((count: number) => {
+    setRadialToolState((prev) => ({
+      ...prev,
+      count: Math.max(2, Math.min(50, Math.round(count) || 2)),
+    }));
+  }, []);
+
+  const handleRadialUpdateSweepAngle = useCallback((angle: number) => {
+    setRadialToolState((prev) => ({
+      ...prev,
+      sweepAngle: Math.max(0, Math.min(360, Math.round(angle) || 0)),
+    }));
+  }, []);
+
+  const handleRadialUpdateStartAngle = useCallback((angle: number) => {
+    radialAngleLockedRef.current = true;
+    setRadialToolState((prev) => ({
+      ...prev,
+      startAngle: normalizeAngle(angle),
+    }));
+  }, []);
+
+  const handleRadialUpdateRadiusValue = useCallback((radius: number) => {
+    setRadialToolState((prev) => ({ ...prev, radius: Math.max(1, Math.round(radius) || 1) }));
+  }, []);
+
+  const handleRadialToggleRotate = useCallback((rotate: boolean) => {
+    setRadialToolState((prev) => ({ ...prev, rotateObjects: rotate }));
+  }, []);
+
+  const handleRadialCancel = useCallback(() => {
+    radialAngleLockedRef.current = false;
+    setRadialToolState({
+      step: 'idle',
+      radius: 100,
+      count: 8,
+      startAngle: 0,
+      sweepAngle: 360,
+      rotateObjects: false,
+      previewElements: [],
+    });
+    showToast('방사상 배열을 취소했습니다.');
+  }, [showToast]);
+
   // Switching tools: canvas crop must not keep selection/transform active
-  const handleSelectTool = useCallback((tool: ToolType) => {
-    if (tool === 'crop') {
-      setSelectedElementIds([]);
-      setCroppingImageId(null);
-      setActiveImgCropBox(null);
-      activeImgCropBoxRef.current = null;
-    } else if (tool !== 'select' && croppingImageId) {
-      setCroppingImageId(null);
-      setActiveImgCropBox(null);
-      activeImgCropBoxRef.current = null;
-    }
-    setCurrentTool(tool);
-  }, [croppingImageId]);
+  const handleSelectTool = useCallback(
+    (tool: ToolType) => {
+      if (tool === 'crop') {
+        setSelectedElementIds([]);
+        setCroppingImageId(null);
+        setActiveImgCropBox(null);
+        activeImgCropBoxRef.current = null;
+      } else if (tool !== 'select' && croppingImageId) {
+        setCroppingImageId(null);
+        setActiveImgCropBox(null);
+        activeImgCropBoxRef.current = null;
+      }
+
+      if (tool === 'radial') {
+        // The currently selected element is the one that gets replicated.
+        const source = selectedElementId
+          ? elements.find((e) => e.id === selectedElementId)
+          : undefined;
+        if (!source) {
+          showToast('방사상 배열을 만들려면 먼저 복제할 객체를 선택하세요.');
+          setCurrentTool('select');
+          return;
+        }
+        handleRadialStart(source);
+        setCurrentTool('radial');
+        return;
+      }
+
+      // Leaving the radial tool clears the preview.
+      if (radialToolState.step !== 'idle') {
+        setRadialToolState((prev) => ({
+          ...prev,
+          step: 'idle',
+          previewElements: [],
+          center: undefined,
+          sourceElement: undefined,
+        }));
+      }
+      setCurrentTool(tool);
+    },
+    [
+      croppingImageId,
+      elements,
+      selectedElementId,
+      radialToolState.step,
+      showToast,
+      handleRadialStart,
+    ]
+  );
 
   const toggleLeftPanel = useCallback(() => {
     setIsLeftPanelOpen((prev) => !prev);
@@ -232,6 +384,29 @@ export default function App() {
   const toggleRightPanel = useCallback(() => {
     setIsRightPanelOpen((prev) => !prev);
   }, []);
+
+  /**
+   * Rebuild the preview copies whenever one of the radial parameters changes
+   * (radius, count, sweep, start angle, rotation, …).
+   */
+  useEffect(() => {
+    setRadialToolState((prev) => {
+      if (prev.step === 'idle' || !prev.center || !prev.sourceElement) {
+        return prev.previewElements.length > 0 ? { ...prev, previewElements: [] } : prev;
+      }
+      return { ...prev, previewElements: buildRadialPreview(prev, activeLayerId) };
+    });
+  }, [
+    activeLayerId,
+    radialToolState.center,
+    radialToolState.radius,
+    radialToolState.count,
+    radialToolState.startAngle,
+    radialToolState.sweepAngle,
+    radialToolState.rotateObjects,
+    radialToolState.sourceElement,
+  ]);
+
 
   // History for Undo / Redo
   const [history, setHistory] = useState<HistorySnapshot[]>([
@@ -269,6 +444,37 @@ export default function App() {
     },
     [historyIndex, activeLayerId]
   );
+
+  /**
+   * Turn the preview copies into real elements.
+   * Defined after pushHistory so the history snapshot can be pushed directly.
+   */
+  const handleRadialConfirm = useCallback(() => {
+    const { center, previewElements } = radialToolState;
+    if (!center || previewElements.length === 0) {
+      showToast('방사상 위치를 먼저 지정하세요.');
+      return;
+    }
+    const stamp = Date.now();
+    const newElements = previewElements.map((el, i) => ({
+      ...el,
+      id: `radial-${stamp}-${i}`,
+      name: el.name.replace(/\s*\(방사상.*\)$/, ''),
+    }));
+    const nextElements = [...elements, ...newElements];
+    setElements(nextElements);
+    setSelectedElementIds(newElements.map((e) => e.id));
+    pushHistory(nextElements, layers, config);
+    radialAngleLockedRef.current = false;
+    setRadialToolState((prev) => ({
+      ...prev,
+      step: 'idle',
+      previewElements: [],
+      center: undefined,
+      sourceElement: undefined,
+    }));
+    showToast(`방사상 배열 ${newElements.length}개를 생성했습니다.`);
+  }, [radialToolState, elements, layers, config, pushHistory, showToast]);
 
   // Undo Handler
   const handleUndo = useCallback(() => {
@@ -308,7 +514,7 @@ export default function App() {
       if (target.type === 'shape') {
         const isLineShape =
           target.shapeType === 'line' ||
-          target.shapeType === 'line-arrow' ||
+          target.shapeType.startsWith('line-arrow') ||
           target.shapeType === 'polyline' || target.shapeType === 'arc';
 
         if (isLineShape) {
@@ -425,7 +631,7 @@ export default function App() {
       if (newElem.type === 'shape') {
         const isLineShape =
           newElem.shapeType === 'line' ||
-          newElem.shapeType === 'line-arrow' ||
+          newElem.shapeType.startsWith('line-arrow') ||
           newElem.shapeType === 'polyline' || newElem.shapeType === 'arc';
         if (isLineShape) {
           setSelectedShapeType(newElem.shapeType);
@@ -487,7 +693,7 @@ export default function App() {
       setElements(next);
       // Feature 5: Keep style persistent for future shapes & lines
       if (updated.type === 'shape') {
-        const isLineShape = updated.shapeType === 'line' || updated.shapeType === 'line-arrow' || updated.shapeType === 'polyline' || updated.shapeType === 'arc';
+        const isLineShape = updated.shapeType === 'line' || updated.shapeType.startsWith('line-arrow') || updated.shapeType === 'polyline' || updated.shapeType === 'arc';
         if (isLineShape) {
           // Keep line shape type sticky for next drawings
           setSelectedShapeType(updated.shapeType);
@@ -634,6 +840,34 @@ export default function App() {
       pushHistory(next, layers, config);
     },
     [elements, layers, config, pushHistory]
+  );
+
+  // Create a mirror (flipped duplicate) of the selected element, placed
+  // flush against it so the pair reads as one reflected image.
+  const handleCreateMirrorElement = useCallback(
+    (axis: 'h' | 'v') => {
+      const source = elements.find((el) => selectedElementIds.includes(el.id));
+      if (!source) return;
+      const mirrored: CanvasElement = {
+        ...JSON.parse(JSON.stringify(source)),
+        id: `${source.type}-mirror-${Date.now()}`,
+        name: `${source.name || source.type} (거울상)`,
+        flipH: axis === 'h' ? !(source.flipH ?? false) : (source.flipH ?? false),
+        flipV: axis === 'v' ? !(source.flipV ?? false) : (source.flipV ?? false),
+        x: axis === 'h' ? source.x + source.width : source.x,
+        y: axis === 'v' ? source.y + source.height : source.y,
+      };
+      const next = [...elements, mirrored];
+      setElements(next);
+      setSelectedElementIds([mirrored.id]);
+      pushHistory(next, layers, config);
+      showToast(
+        axis === 'h'
+          ? '좌우 거울상 복제를 만들었습니다. (원본 오른쪽에 붙음)'
+          : '상하 거울상 복제를 만들었습니다. (원본 아래에 붙음)'
+      );
+    },
+    [elements, selectedElementIds, layers, config, pushHistory, showToast]
   );
 
   const handleDuplicateSelectedElements = useCallback(() => {
@@ -898,6 +1132,25 @@ export default function App() {
     handleDeleteSelectedElements();
     showToast(`${selected.length}개 객체를 잘라냈습니다. (Ctrl+V로 붙여넣기)`);
   }, [elements, selectedElementIds, handleDeleteSelectedElements, showToast]);
+
+  // Background removal: color-key from the border, clear matched pixels to transparent.
+  const handleRemoveImageBackground = useCallback(
+    async (imgElem: ImageElement, tolerance: number) => {
+      try {
+        showToast('배경을 제거하는 중...');
+        const { element: next, removedPct } = await removeImageBackground(imgElem, tolerance);
+        setElements((prev) => prev.map((el) => (el.id === imgElem.id ? next : el)));
+        pushHistory(elements.map((el) => (el.id === imgElem.id ? next : el)), layers, config);
+        setSelectedElementIds([imgElem.id]);
+        showToast(`배경을 제거했습니다. (픽셀 ${removedPct}% 지움) 경계가 거칠면 허용치를 조정해 다시 적용하세요.`);
+      } catch (err) {
+        console.error('Background removal failed:', err);
+        const msg = err instanceof Error ? err.message : '알 수 없는 오류';
+        showToast(`배경 제거 실패: ${msg}`);
+      }
+    },
+    [elements, layers, config, pushHistory, showToast]
+  );
 
   // Copy Selected Region of an Image (Ctrl+C in crop mode)
   const handleCopyImagePart = useCallback(
@@ -1671,7 +1924,7 @@ export default function App() {
             if (el.type === 'shape') {
               const isLineShape =
                 el.shapeType === 'line' ||
-                el.shapeType === 'line-arrow' ||
+                el.shapeType.startsWith('line-arrow') ||
                 el.shapeType === 'polyline' || el.shapeType === 'arc';
               if (isLineShape || el.fill === 'none') {
                 return { ...el, stroke: color };
@@ -1713,7 +1966,7 @@ export default function App() {
             hasChanges = true;
             if (el.type === 'shape') {
               const isStraightLine =
-                el.shapeType === 'line' || el.shapeType === 'line-arrow';
+                el.shapeType === 'line' || el.shapeType.startsWith('line-arrow');
               return {
                 ...el,
                 strokeWidth: w,
@@ -1832,6 +2085,20 @@ export default function App() {
           else if (e.key === 'ArrowDown') dy = step;
 
           handleNudgeSelectedElements(dx, dy);
+          return;
+        }
+      }
+
+      // Radial array: Enter confirms, Escape cancels
+      if (radialToolState.step !== 'idle') {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleRadialConfirm();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleRadialCancel();
           return;
         }
       }
@@ -2018,6 +2285,9 @@ export default function App() {
     handleSelectTool,
     toggleLeftPanel,
     toggleRightPanel,
+    radialToolState.step,
+    handleRadialConfirm,
+    handleRadialCancel,
   ]);
 
   const selectedElement = elements.find((el) => el.id === selectedElementId) || null;
@@ -2096,45 +2366,50 @@ export default function App() {
 
         {/* Center: Canvas Viewport */}
         <CanvasArea
-          config={config}
-          onUpdateConfig={handleUpdateConfig}
-          onCropCanvas={handleCropCanvas}
-          onCutCanvasRegion={handleCutCanvasRegion}
-          onCopyCanvasRegion={handleCopyCanvasRegion}
-          onTriggerPaste={handlePasteAction}
-          onMouseMoveCanvas={(pt) => {
-            lastMouseCanvasPosRef.current = pt;
-          }}
-          onCopyImagePart={handleCopyImagePart}
-          onCutImagePart={handleCutImagePart}
-          onCropBoxChange={handleCropBoxChange}
-          layers={layers}
-          elements={elements}
-          onAddElement={handleAddElement}
-          onUpdateElement={handleUpdateElement}
-          onUpdateElements={handleUpdateElements}
-          onCommitHistory={handleCommitHistory}
-          onDeleteElement={handleDeleteElement}
-          activeLayerId={activeLayerId}
-          selectedElementId={selectedElementId}
-          selectedElementIds={selectedElementIds}
-          onSelectElement={handleSelectElement}
-          onSelectMultipleElements={handleSelectMultipleElements}
-          onToggleSelectElement={handleToggleSelectElement}
-          currentTool={currentTool}
-          onSelectTool={handleSelectTool}
-          selectedShapeType={selectedShapeType}
-          primaryColor={primaryColor}
-          onPrimaryColorChange={handlePrimaryColorChange}
-          strokeWidth={strokeWidth}
-          zoom={zoom}
-          onZoomChange={setZoom}
-          lastShapeStyle={lastShapeStyle}
-          croppingImageId={croppingImageId}
-          onStartCropImage={handleStartCropImage}
-          onFinishCropImage={handleFinishCropImage}
-          onInsertImage={handleInsertImage}
-        />
+            config={config}
+            onUpdateConfig={handleUpdateConfig}
+            onCropCanvas={handleCropCanvas}
+            onCutCanvasRegion={handleCutCanvasRegion}
+            onCopyCanvasRegion={handleCopyCanvasRegion}
+            onTriggerPaste={handlePasteAction}
+            onMouseMoveCanvas={(pt) => {
+              lastMouseCanvasPosRef.current = pt;
+            }}
+            onCopyImagePart={handleCopyImagePart}
+            onCutImagePart={handleCutImagePart}
+            onCropBoxChange={handleCropBoxChange}
+            layers={layers}
+            elements={elements}
+            onAddElement={handleAddElement}
+            onUpdateElement={handleUpdateElement}
+            onUpdateElements={handleUpdateElements}
+            onCommitHistory={handleCommitHistory}
+            onDeleteElement={handleDeleteElement}
+            activeLayerId={activeLayerId}
+            selectedElementId={selectedElementId}
+            selectedElementIds={selectedElementIds}
+            onSelectElement={handleSelectElement}
+            onSelectMultipleElements={handleSelectMultipleElements}
+            onToggleSelectElement={handleToggleSelectElement}
+            currentTool={currentTool}
+            onSelectTool={handleSelectTool}
+            selectedShapeType={selectedShapeType}
+            primaryColor={primaryColor}
+            onPrimaryColorChange={handlePrimaryColorChange}
+            strokeWidth={strokeWidth}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            lastShapeStyle={lastShapeStyle}
+            croppingImageId={croppingImageId}
+            onStartCropImage={handleStartCropImage}
+            onFinishCropImage={handleFinishCropImage}
+            onInsertImage={handleInsertImage}
+            // Radial Tool
+            radialToolState={radialToolState}
+            onRadialSetCenter={handleRadialSetCenter}
+            onRadialUpdateRadius={handleRadialUpdateRadius}
+            onRadialSetStep={handleRadialSetStep}
+          />
       </div>
       </div>
 
@@ -2143,6 +2418,7 @@ export default function App() {
           selectedElement={selectedElement}
           onUpdateElement={handleUpdateElement}
           onDuplicateElement={handleDuplicateElement}
+          onCreateMirrorAxis={handleCreateMirrorElement}
           onDeleteElement={handleDeleteElement}
           onBringForward={handleBringForward}
           onSendBackward={handleSendBackward}
@@ -2159,10 +2435,20 @@ export default function App() {
           onCancelCropImage={handleFinishCropImage}
           onCutImagePart={handleCutImagePart}
           onCopyImagePart={handleCopyImagePart}
+          onRemoveImageBackground={handleRemoveImageBackground}
           activeCropBox={activeImgCropBox}
           onFitCanvasToContent={handleFitCanvasToContent}
           canFitCanvas={canFitCanvas}
           fitPreview={fitPreview}
+          // Radial Tool
+          radialToolState={radialToolState}
+          onRadialUpdateCount={handleRadialUpdateCount}
+          onRadialUpdateSweepAngle={handleRadialUpdateSweepAngle}
+          onRadialUpdateStartAngle={handleRadialUpdateStartAngle}
+          onRadialUpdateRadius={handleRadialUpdateRadiusValue}
+          onRadialToggleRotate={handleRadialToggleRotate}
+          onRadialConfirm={handleRadialConfirm}
+          onRadialCancel={handleRadialCancel}
       />
 
       {/* Modals */}

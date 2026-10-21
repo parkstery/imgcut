@@ -5,6 +5,7 @@ import {
   TextElement,
   ImageElement,
   CanvasConfig,
+  RadialToolState,
 } from '../types';
 import { FONT_FAMILIES } from '../utils/colorUtils';
 import { finalizeArcGeometry } from '../utils/shapeGenerators';
@@ -22,9 +23,11 @@ import {
   Copy,
   Trash2,
   RotateCw,
+  RotateCcw,
   FlipHorizontal,
   FlipVertical,
   Sliders,
+  Eraser,
   PanelRightClose,
   PanelRightOpen,
   Crop,
@@ -74,6 +77,7 @@ interface PropertiesPanelProps {
   selectedElement: CanvasElement | null;
   onUpdateElement: (updated: CanvasElement) => void;
   onDuplicateElement: (element: CanvasElement) => void;
+  onCreateMirrorAxis?: (axis: 'h' | 'v') => void;
   onDeleteElement: (id: string) => void;
   onBringForward: (id: string) => void;
   onSendBackward: (id: string) => void;
@@ -90,16 +94,27 @@ interface PropertiesPanelProps {
   onCancelCropImage?: () => void;
   onCutImagePart?: (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => void;
   onCopyImagePart?: (imgElem: ImageElement, crop: { x: number; y: number; w: number; h: number }) => void;
+  onRemoveImageBackground?: (imgElem: ImageElement, tolerance: number) => void;
   activeCropBox?: { x: number; y: number; w: number; h: number } | null;
   onFitCanvasToContent?: () => void;
   canFitCanvas?: boolean;
   fitPreview?: string | null;
+  /** Radial array (방사상 배열) tool */
+  radialToolState?: RadialToolState;
+  onRadialUpdateCount?: (count: number) => void;
+  onRadialUpdateSweepAngle?: (angle: number) => void;
+  onRadialUpdateStartAngle?: (angle: number) => void;
+  onRadialUpdateRadius?: (radius: number) => void;
+  onRadialToggleRotate?: (rotate: boolean) => void;
+  onRadialConfirm?: () => void;
+  onRadialCancel?: () => void;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedElement,
   onUpdateElement,
   onDuplicateElement,
+  onCreateMirrorAxis,
   onDeleteElement,
   onBringForward,
   onSendBackward,
@@ -116,13 +131,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onCancelCropImage,
   onCutImagePart,
   onCopyImagePart,
+  onRemoveImageBackground,
   activeCropBox,
   onFitCanvasToContent,
   canFitCanvas = false,
   fitPreview = null,
+  radialToolState,
+  onRadialUpdateCount,
+  onRadialUpdateSweepAngle,
+  onRadialUpdateStartAngle,
+  onRadialUpdateRadius,
+  onRadialToggleRotate,
+  onRadialConfirm,
+  onRadialCancel,
 }) => {
   const [canvasWidthDraft, setCanvasWidthDraft] = useState(String(config.width));
   const [canvasHeightDraft, setCanvasHeightDraft] = useState(String(config.height));
+  // Rotation manipulation mode: flip buttons become 1°/90° rotators
+  const [rotateMode, setRotateMode] = useState(false);
+  // Background-removal color tolerance (0-100; flood fill threshold)
+  const [bgTolerance, setBgTolerance] = useState<number>(30);
 
   useEffect(() => {
     setCanvasWidthDraft(String(config.width));
@@ -366,11 +394,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const isLine =
     isShape &&
     (shape?.shapeType === 'line' ||
-      shape?.shapeType === 'line-arrow' ||
+      shape?.shapeType.startsWith('line-arrow') ||
       shape?.shapeType === 'polyline' ||
       shape?.shapeType === 'arc');
-  const isStraightLine =
-    isShape && (shape?.shapeType === 'line' || shape?.shapeType === 'line-arrow');
+  const isStraightLine = isShape && (shape?.shapeType === 'line' || shape?.shapeType.startsWith('line-arrow'));
   const isArc = isShape && shape?.shapeType === 'arc';
   const isText = selectedElement.type === 'text';
   const isImage = selectedElement.type === 'image';
@@ -421,6 +448,104 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* Radial Array (방사상 배열) controls */}
+      {radialToolState && radialToolState.step !== 'idle' && (
+        <div className="space-y-2.5 p-3 rounded-lg bg-amber-500/5 border border-amber-500/30">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-amber-300">방사상 배열</span>
+            <span className="text-[10px] text-stone-400">
+              {radialToolState.step === 'placing_center'
+                ? '중심점을 클릭하세요'
+                : radialToolState.step === 'preview'
+                ? '반지름 고정됨 (클릭해 해제)'
+                : '반지름 조절 중'}
+            </span>
+          </div>
+
+          {radialToolState.sourceElement && (
+            <div className="text-[10px] text-stone-400 truncate">
+              원본: {radialToolState.sourceElement.name}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-stone-400 w-14 shrink-0">개수</span>
+            <input
+              type="number"
+              min={2}
+              max={50}
+              value={radialToolState.count}
+              onChange={(e) => onRadialUpdateCount?.(parseInt(e.target.value) || 2)}
+              className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-stone-400 w-14 shrink-0">반지름</span>
+            <input
+              type="number"
+              min={1}
+              value={Math.round(radialToolState.radius)}
+              onChange={(e) => onRadialUpdateRadius?.(parseInt(e.target.value) || 1)}
+              className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+            />
+            <span className="text-[10px] text-stone-500 shrink-0">px</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-stone-400 w-14 shrink-0">시작 각도</span>
+            <input
+              type="number"
+              min={0}
+              max={360}
+              value={Math.round(radialToolState.startAngle)}
+              onChange={(e) => onRadialUpdateStartAngle?.(parseInt(e.target.value) || 0)}
+              className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+            />
+            <span className="text-[10px] text-stone-500 shrink-0">°</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-stone-400 w-14 shrink-0">범위</span>
+            <input
+              type="number"
+              min={0}
+              max={360}
+              value={Math.round(radialToolState.sweepAngle)}
+              onChange={(e) => onRadialUpdateSweepAngle?.(parseInt(e.target.value) || 0)}
+              className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
+            />
+            <span className="text-[10px] text-stone-500 shrink-0">°</span>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-stone-300">
+            <input
+              type="checkbox"
+              checked={radialToolState.rotateObjects}
+              onChange={(e) => onRadialToggleRotate?.(e.target.checked)}
+              className="accent-amber-500 w-3.5 h-3.5"
+            />
+            <span>복사본을 원주를 따라 회전</span>
+          </label>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => onRadialConfirm?.()}
+              disabled={radialToolState.previewElements.length === 0}
+              className="px-2 py-1.5 rounded bg-amber-500 text-stone-950 text-[11px] font-semibold hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              확인 (Enter)
+            </button>
+            <button
+              onClick={() => onRadialCancel?.()}
+              className="px-2 py-1.5 rounded border border-stone-700 text-stone-300 text-[11px] hover:bg-stone-800"
+            >
+              취소 (Esc)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Geometry / Transform */}
       <PropertyGroup
@@ -538,24 +663,175 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           )}
         </div>
 
+        {/* Rotation mode checkbox */}
+        <label className="flex items-center gap-1.5 text-[11px] text-stone-300 cursor-pointer select-none pt-0.5">
+          <input
+            id="chk-rotate-mode"
+            type="checkbox"
+            checked={rotateMode}
+            onChange={(e) => setRotateMode(e.target.checked)}
+            className="accent-amber-500 w-3.5 h-3.5"
+          />
+          <span>회전 조작 모드 {rotateMode ? '(버튼 = 각도 조절 중)' : ''}</span>
+        </label>
+
         {/* Rotation */}
         <div className="flex items-center space-x-2 pt-0.5">
           <RotateCw className="w-3.5 h-3.5 text-stone-400" />
-          <span className="text-[10px] text-stone-400">회전:</span>
+          <span className="text-[10px] text-stone-400 shrink-0">회전:</span>
           <input
             type="range"
             min="0"
             max="360"
             value={selectedElement.rotation || 0}
-            onChange={(e) =>
-              onUpdateElement({ ...selectedElement, rotation: parseInt(e.target.value) || 0 })
-            }
+            onChange={(e) => {
+              // Moving the slider with the mouse implies the user is fine-tuning
+              // the angle — opt into rotation manipulation mode automatically.
+              if (!rotateMode) setRotateMode(true);
+              const v = parseInt(e.target.value) || 0;
+              onUpdateElement({ ...selectedElement, rotation: v });
+            }}
             className="flex-1 accent-amber-500"
           />
-          <span className="font-mono text-stone-300 text-xs w-8 text-right">
-            {selectedElement.rotation || 0}°
-          </span>
+          <input
+            id="rotation-degrees-input"
+            type="number"
+            min="0"
+            max="359"
+            value={selectedElement.rotation || 0}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              if (!Number.isFinite(parsed)) return;
+              const normalized = ((parsed % 360) + 360) % 360;
+              if (!rotateMode) setRotateMode(true);
+              onUpdateElement({ ...selectedElement, rotation: normalized });
+            }}
+            className="w-14 bg-stone-800 border border-stone-700 rounded px-1.5 py-1 font-mono text-stone-100 text-xs text-right focus:border-amber-500"
+            title="각도 직접 입력 (0~359°)"
+          />
+          <span className="font-mono text-stone-300 text-xs">°</span>
         </div>
+
+        {/* Flip buttons — or 1°/90° angle steppers in rotation mode */}
+        <div className="flex items-center space-x-2">
+          {rotateMode ? (
+            <>
+              <button
+                id="prop-rotate--1"
+                onClick={() =>
+                  onUpdateElement({
+                    ...selectedElement,
+                    rotation: (((selectedElement.rotation || 0) - 1) % 360 + 360) % 360,
+                  })
+                }
+                className="flex-1 flex items-center justify-center space-x-0.5 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+                title="반시계 방향 1° 회전"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>1°</span>
+              </button>
+              <button
+                id="prop-rotate-1"
+                onClick={() =>
+                  onUpdateElement({
+                    ...selectedElement,
+                    rotation: (((selectedElement.rotation || 0) + 1) % 360 + 360) % 360,
+                  })
+                }
+                className="flex-1 flex items-center justify-center space-x-0.5 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+                title="시계 방향 1° 회전"
+              >
+                <span>1°</span>
+                <RotateCw className="w-3 h-3" />
+              </button>
+              <button
+                id="prop-rotate--90"
+                onClick={() =>
+                  onUpdateElement({
+                    ...selectedElement,
+                    rotation: (((selectedElement.rotation || 0) - 90) % 360 + 360) % 360,
+                  })
+                }
+                className="flex-1 flex items-center justify-center space-x-0.5 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+                title="반시계 방향 90° 회전"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>90°</span>
+              </button>
+              <button
+                id="prop-rotate-90"
+                onClick={() =>
+                  onUpdateElement({
+                    ...selectedElement,
+                    rotation: (((selectedElement.rotation || 0) + 90) % 360 + 360) % 360,
+                  })
+                }
+                className="flex-1 flex items-center justify-center space-x-0.5 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+                title="시계 방향 90° 회전"
+              >
+                <span>90°</span>
+                <RotateCw className="w-3 h-3" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-stone-400 shrink-0">뒤집기:</span>
+              <button
+                id="prop-flip-h"
+                onClick={() =>
+                  onUpdateElement({ ...selectedElement, flipH: !selectedElement.flipH })
+                }
+                className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] transition-colors ${
+                  selectedElement.flipH
+                    ? 'border-amber-500 bg-amber-500/10 text-amber-300'
+                    : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                }`}
+              >
+                <FlipHorizontal className="w-3.5 h-3.5" />
+                <span>좌우</span>
+              </button>
+              <button
+                id="prop-flip-v"
+                onClick={() =>
+                  onUpdateElement({ ...selectedElement, flipV: !selectedElement.flipV })
+                }
+                className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] transition-colors ${
+                  selectedElement.flipV
+                    ? 'border-amber-500 bg-amber-500/10 text-amber-300'
+                    : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                }`}
+              >
+                <FlipVertical className="w-3.5 h-3.5" />
+                <span>상하</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Mirror duplicate */}
+        {onCreateMirrorAxis && (
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] text-stone-400 shrink-0">거울상:</span>
+            <button
+              id="prop-mirror-h"
+              onClick={() => onCreateMirrorAxis('h')}
+              className="flex-1 flex items-center justify-center space-x-1 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+              title="뒤집힌 복제를 원본 바로 오른쪽에 붙여 만듭니다"
+            >
+              <FlipHorizontal className="w-3.5 h-3.5" />
+              <span>좌우 거울상</span>
+            </button>
+            <button
+              id="prop-mirror-v"
+              onClick={() => onCreateMirrorAxis('v')}
+              className="flex-1 flex items-center justify-center space-x-1 py-1 rounded border border-stone-800 text-[11px] text-stone-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-300 transition-colors"
+              title="뒤집힌 복제를 원본 바로 아래에 붙여 만듭니다"
+            >
+              <FlipVertical className="w-3.5 h-3.5" />
+              <span>상하 거울상</span>
+            </button>
+          </div>
+        )}
 
         {/* Opacity */}
         <div className="flex items-center space-x-2">
@@ -583,7 +859,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           {isStraightLine && (
             <div className="space-y-1.5">
               <span className="text-[11px] text-stone-400">선 종류 (다음 그리기에도 유지)</span>
-              <div className="flex items-center space-x-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   id="prop-line-type-straight"
                   onClick={() =>
@@ -593,7 +869,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       name: '직선',
                     })
                   }
-                  className={`flex-1 py-1.5 rounded border text-xs font-medium transition-colors ${
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
                     shape.shapeType === 'line'
                       ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
                       : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
@@ -602,21 +878,106 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   ─ 직선
                 </button>
                 <button
-                  id="prop-line-type-arrow"
+                  id="prop-line-type-arrow-end"
                   onClick={() =>
                     onUpdateElement({
                       ...shape,
                       shapeType: 'line-arrow',
-                      name: '화살표 선',
+                      name: '끝 화살표',
                     })
                   }
-                  className={`flex-1 py-1.5 rounded border text-xs font-medium transition-colors ${
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
                     shape.shapeType === 'line-arrow'
                       ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
                       : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
                   }`}
                 >
-                  ↗ 화살표 선
+                  ↗ 끝 화살표
+                </button>
+                <button
+                  id="prop-line-type-arrow-both"
+                  onClick={() =>
+                    onUpdateElement({
+                      ...shape,
+                      shapeType: 'line-arrow-both',
+                      name: '양끝 화살표',
+                    })
+                  }
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
+                    shape.shapeType === 'line-arrow-both'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
+                      : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                  }`}
+                >
+                  ↔ 양끝 화살표
+                </button>
+                <button
+                  id="prop-line-type-arrow-start"
+                  onClick={() =>
+                    onUpdateElement({
+                      ...shape,
+                      shapeType: 'line-arrow-start',
+                      name: '시작 화살표',
+                    })
+                  }
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
+                    shape.shapeType === 'line-arrow-start'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
+                      : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                  }`}
+                >
+                  ↖ 시작 화살표
+                </button>
+                <button
+                  id="prop-line-type-arrow-open"
+                  onClick={() =>
+                    onUpdateElement({
+                      ...shape,
+                      shapeType: 'line-arrow-open',
+                      name: '열린 화살표',
+                    })
+                  }
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
+                    shape.shapeType === 'line-arrow-open'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
+                      : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                  }`}
+                >
+                  &gt; 열린 화살표
+                </button>
+                <button
+                  id="prop-line-type-arrow-dot"
+                  onClick={() =>
+                    onUpdateElement({
+                      ...shape,
+                      shapeType: 'line-arrow-dot',
+                      name: '끝 점 화살표',
+                    })
+                  }
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
+                    shape.shapeType === 'line-arrow-dot'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
+                      : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                  }`}
+                >
+                  · 끝 점
+                </button>
+                <button
+                  id="prop-line-type-arrow-diamond"
+                  onClick={() =>
+                    onUpdateElement({
+                      ...shape,
+                      shapeType: 'line-arrow-diamond',
+                      name: '마름모 화살표',
+                    })
+                  }
+                  className={`py-1.5 rounded border text-xs font-medium transition-colors ${
+                    shape.shapeType === 'line-arrow-diamond'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold shadow-xs'
+                      : 'border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                  }`}
+                >
+                  ◆ 마름모
                 </button>
               </div>
             </div>
@@ -1263,27 +1624,43 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </button>
             </div>
 
-          {/* Flip Buttons */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => onUpdateElement({ ...img, flipH: !img.flipH })}
-              className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] ${
-                img.flipH ? 'border-amber-500 bg-amber-500/10 text-amber-300' : 'border-stone-800 text-stone-400'
-              }`}
-            >
-              <FlipHorizontal className="w-3.5 h-3.5" />
-              <span>좌우 반전</span>
-            </button>
-            <button
-              onClick={() => onUpdateElement({ ...img, flipV: !img.flipV })}
-              className={`flex-1 flex items-center justify-center space-x-1 py-1 rounded border text-[11px] ${
-                img.flipV ? 'border-amber-500 bg-amber-500/10 text-amber-300' : 'border-stone-800 text-stone-400'
-              }`}
-            >
-              <FlipVertical className="w-3.5 h-3.5" />
-              <span>상하 반전</span>
-            </button>
-          </div>
+          {/* Background Removal */}
+          {onRemoveImageBackground && (
+            <div className="space-y-1.5 rounded border border-stone-800 p-2">
+              <div className="flex items-center justify-between">
+                <label className="text-stone-300 font-medium text-[11px] flex items-center space-x-1">
+                  <Eraser className="w-3.5 h-3.5 text-amber-400" />
+                  <span>배경 제거</span>
+                </label>
+                <button
+                  id="btn-remove-bg"
+                  onClick={() => onRemoveImageBackground(img, bgTolerance)}
+                  className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold transition-colors"
+                  title="단색·균일한 배경을 투명하게 지웁니다"
+                >
+                  적용
+                </button>
+              </div>
+              <div className="flex items-center space-x-2 text-[11px]">
+                <span className="text-[10px] text-stone-400 shrink-0">
+                  허용치 <span className="text-amber-400 font-semibold">{bgTolerance}%</span>
+                </span>
+                <input
+                  id="bg-removal-tolerance"
+                  type="range"
+                  min="5"
+                  max="80"
+                  step="1"
+                  value={bgTolerance}
+                  onChange={(e) => setBgTolerance(Number(e.target.value))}
+                  className="flex-1 accent-amber-500 cursor-pointer"
+                />
+              </div>
+              <p className="text-[10px] text-stone-500 leading-snug">
+                가장자리에서 안쪽으로 배경색을 채워 지웁니다. 배경과 색이 비슷한 부분도 함께 지워질 수 있습니다.
+              </p>
+            </div>
+          )}
 
           {/* Filter sliders — compact single-row: short label | slider | value */}
           <div className="space-y-1 pt-1 text-[11px]">

@@ -16,16 +16,20 @@ import {
   Triangle,
   Star,
   ArrowRight,
+  ArrowLeft,
+  ArrowLeftRight,
   MoveHorizontal,
   MessageSquare,
   Heart,
   Hexagon,
+  Diamond,
   Minus,
   ArrowUpRight,
   Waypoints,
   Spline,
   ChevronDown,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import { ToolType, ShapeType } from '../types';
 import { OFFICE_THEME_PALETTES, PAINT_COLORS } from '../utils/colorUtils';
@@ -59,6 +63,15 @@ const SHAPE_ITEMS: { type: ShapeType; label: string; icon: React.ReactNode }[] =
   { type: 'arc', label: '아크 (호)', icon: <Spline className="w-4 h-4" /> },
 ];
 
+const ARROW_LINE_TYPES: { type: ShapeType; label: string; icon: React.ReactNode }[] = [
+  { type: 'line-arrow', label: '끝 화살표 (기본)', icon: <ArrowUpRight className="w-4 h-4" /> },
+  { type: 'line-arrow-both', label: '양끝 화살표', icon: <ArrowLeftRight className="w-4 h-4" /> },
+  { type: 'line-arrow-start', label: '시작 화살표', icon: <ArrowLeft className="w-4 h-4" /> },
+  { type: 'line-arrow-open', label: '열린 화살표', icon: <ArrowRight className="w-4 h-4" /> },
+  { type: 'line-arrow-dot', label: '끝 점', icon: <Circle className="w-4 h-4" /> },
+  { type: 'line-arrow-diamond', label: '끝 마름모', icon: <Diamond className="w-4 h-4" /> },
+];
+
 const STROKE_WIDTHS = [1, 2, 4, 8, 12, 20];
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -72,17 +85,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onStrokeWidthChange,
 }) => {
   const [showShapeMenu, setShowShapeMenu] = useState(false);
+  const [showArrowMenu, setShowArrowMenu] = useState(false);
   const [showColorPalette, setShowColorPalette] = useState(false);
   const shapeMenuRef = useRef<HTMLDivElement>(null);
+  const arrowMenuRef = useRef<HTMLDivElement>(null);
   const eyedropperBtnRef = useRef<HTMLButtonElement>(null);
   const colorPaletteRef = useRef<HTMLDivElement>(null);
 
-  // Close shape / color menus when clicking outside
+  // Close shape / arrow / color menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (shapeMenuRef.current && !shapeMenuRef.current.contains(target)) {
         setShowShapeMenu(false);
+      }
+      if (arrowMenuRef.current && !arrowMenuRef.current.contains(target)) {
+        setShowArrowMenu(false);
       }
       const onEyedropper =
         eyedropperBtnRef.current?.contains(target) ||
@@ -202,21 +220,95 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Minus className="w-4 h-4" />
         </button>
 
-        <button
-          id="tool-quick-line-arrow"
-          onClick={() => {
-            onSelectShapeType('line-arrow');
-            onSelectTool('shape');
-          }}
-          className={`p-2 rounded-md transition-colors ${
-            currentTool === 'shape' && selectedShapeType === 'line-arrow'
-              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
-              : 'text-stone-300 hover:text-white hover:bg-stone-800'
-          }`}
-          title="화살표 선 그리기"
-        >
-          <ArrowUpRight className="w-4 h-4" />
-        </button>
+        {/* Arrow Line Dropdown — PowerPoint-style arrow variants */}
+        <div className="relative" ref={arrowMenuRef}>
+          <button
+            id="tool-quick-line-arrow"
+            onClick={() => {
+              onSelectTool('shape');
+              setShowArrowMenu(!showArrowMenu);
+            }}
+            className={`flex items-center gap-0.5 p-2 rounded-md transition-colors ${
+              currentTool === 'shape' &&
+              [
+                'line-arrow',
+                'line-arrow-both',
+                'line-arrow-start',
+                'line-arrow-open',
+                'line-arrow-dot',
+                'line-arrow-diamond',
+              ].includes(selectedShapeType)
+                ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+                : 'text-stone-300 hover:text-white hover:bg-stone-800'
+            }`}
+            title="화살표 선 그리기 (길게 눌러 종류 선택)"
+            aria-label="화살표 선 종류"
+          >
+            {selectedShapeType === 'line-arrow-both' && (
+              <>
+                <ArrowLeftRight className="w-4 h-4" />
+              </>
+            )}
+            {selectedShapeType === 'line-arrow-start' && (
+              <>
+                <ArrowLeft className="w-4 h-4" />
+              </>
+            )}
+            {selectedShapeType === 'line-arrow-open' && (
+              <>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+            {selectedShapeType === 'line-arrow-dot' && (
+              <>
+                <Circle className="w-4 h-4" strokeWidth={2} />
+              </>
+            )}
+            {selectedShapeType === 'line-arrow-diamond' && (
+              <>
+                <Diamond className="w-4 h-4" />
+              </>
+            )}
+            {(selectedShapeType === 'line-arrow' ||
+              (selectedShapeType !== 'line-arrow-both' &&
+                selectedShapeType !== 'line-arrow-start' &&
+                selectedShapeType !== 'line-arrow-open' &&
+                selectedShapeType !== 'line-arrow-dot' &&
+                selectedShapeType !== 'line-arrow-diamond')) && (
+              <ArrowUpRight className="w-4 h-4" />
+            )}
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+          </button>
+
+          {showArrowMenu && (
+            <div className="absolute left-0 top-full mt-1.5 w-52 bg-stone-900 border border-stone-700 rounded-lg shadow-2xl p-2 z-50">
+              <div className="text-[11px] font-semibold text-stone-400 px-2 py-1">
+                화살표 선 종류 (파워포인트 스타일)
+              </div>
+              {ARROW_LINE_TYPES.map((item) => (
+                <button
+                  key={item.type}
+                  id={`arrow-option-${item.type}`}
+                  onClick={() => {
+                    onSelectShapeType(item.type);
+                    onSelectTool('shape');
+                    setShowArrowMenu(false);
+                  }}
+                  className={`flex items-center space-x-2 px-2 py-2 rounded text-xs text-left transition-colors ${
+                    selectedShapeType === item.type && currentTool === 'shape'
+                      ? 'bg-amber-500/20 text-amber-400 font-medium'
+                      : 'text-stone-300 hover:bg-stone-800 hover:text-white'
+                  }`}
+                >
+                  <span className="text-stone-400 flex items-center justify-center w-6 h-6">
+                    {item.icon}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button
           id="tool-quick-polyline"
@@ -294,6 +386,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               currentTool === 'shape' &&
               selectedShapeType !== 'line' &&
               selectedShapeType !== 'line-arrow' &&
+              selectedShapeType !== 'line-arrow-both' &&
+              selectedShapeType !== 'line-arrow-start' &&
+              selectedShapeType !== 'line-arrow-open' &&
+              selectedShapeType !== 'line-arrow-dot' &&
+              selectedShapeType !== 'line-arrow-diamond' &&
               selectedShapeType !== 'polyline' &&
               selectedShapeType !== 'arc' &&
               selectedShapeType !== 'rect' &&
@@ -304,6 +401,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             title={
               selectedShapeType !== 'line' &&
               selectedShapeType !== 'line-arrow' &&
+              selectedShapeType !== 'line-arrow-both' &&
+              selectedShapeType !== 'line-arrow-start' &&
+              selectedShapeType !== 'line-arrow-open' &&
+              selectedShapeType !== 'line-arrow-dot' &&
+              selectedShapeType !== 'line-arrow-diamond' &&
               selectedShapeType !== 'polyline' &&
               selectedShapeType !== 'arc' &&
               selectedShapeType !== 'rect' &&
@@ -498,6 +600,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="화면 영역 캡쳐 및 자르기 (Crop) - 드래그 후 Ctrl+C로 캡쳐 복사, Ctrl+V로 붙여넣기 (C)"
         >
           <Crop className="w-4 h-4" />
+        </button>
+
+        {/* Radial Object Tool — create radial arrays of objects */}
+        <button
+          id="tool-radial"
+          onClick={() => onSelectTool('radial')}
+          className={`p-2 rounded-md transition-colors ${
+            currentTool === 'radial'
+              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+              : 'text-stone-300 hover:text-white hover:bg-stone-800'
+          }`}
+          title="방사상 객체 생성 (Radial Array) — 중심점 기준 원형/부분 원형 반복 배치"
+        >
+          <RotateCcw className="w-4 h-4" />
         </button>
 
         {/* Empty spacer (~1 button width) so the crop button stands out */}
