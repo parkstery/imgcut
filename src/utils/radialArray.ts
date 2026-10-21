@@ -1,4 +1,8 @@
-import { BrushStrokeElement, CanvasElement, RadialToolState } from '../types';
+import {
+  BrushStrokeElement,
+  CanvasElement,
+  RadialToolState,
+} from '../types';
 
 /** Normalize an angle in degrees into the [0, 360) range. */
 export function normalizeAngle(angle: number): number {
@@ -33,7 +37,7 @@ export function buildRadialPreview(
   state: RadialToolState,
   layerId: string
 ): CanvasElement[] {
-  const { center, sourceElement: source, radius, rotateObjects } = state;
+  const { center, sourceElement: source, radius } = state;
   if (!center || !source) return [];
 
   const baseW = source.width;
@@ -46,9 +50,16 @@ export function buildRadialPreview(
     const py = center.y + radius * Math.sin(rad);
     const x = px - baseW / 2;
     const y = py - baseH / 2;
-    // Copies follow the circle when rotation is enabled; the first one keeps
-    // the original angle so the whole array reads as one continuous sweep.
-    const rot = rotateObjects ? baseRotation + (theta - state.startAngle) : baseRotation;
+    // Orientation of the copy:
+    // - none      : every copy keeps the original angle
+    // - tangential: copies follow the circle (first copy keeps its angle)
+    // - radial    : copies point away from the center (sunburst)
+    const rot =
+      state.rotateMode === 'radial'
+        ? baseRotation + theta
+        : state.rotateMode === 'tangential'
+        ? baseRotation + (theta - state.startAngle)
+        : baseRotation;
 
     const copy = {
       ...(source as CanvasElement),

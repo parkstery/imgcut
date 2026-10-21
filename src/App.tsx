@@ -11,6 +11,7 @@ import {
   Point,
   RadialToolState,
   RadialStep,
+  RadialRotateMode,
 } from './types';
 import { HeaderNavbar } from './components/HeaderNavbar';
 import { Toolbar } from './components/Toolbar';
@@ -218,11 +219,11 @@ export default function App() {
   // Radial Object Tool State
   const [radialToolState, setRadialToolState] = useState<RadialToolState>({
     step: 'idle',
-    radius: 100,
-    count: 8,
+    radius: 120,
+    count: 12,
     startAngle: 0,
     sweepAngle: 360,
-    rotateObjects: false,
+    rotateMode: 'radial',
     previewElements: [],
   });
   /** True once the start angle is decided (first drag, or a manual panel edit) */
@@ -238,17 +239,29 @@ export default function App() {
       const baseSize = Math.max(source.width, source.height, 24);
       setRadialToolState({
         step: 'placing_center',
-        radius: Math.round(baseSize * 1.5),
-        count: 8,
+        radius: Math.max(120, Math.round(baseSize * 2)),
+        count: 12,
         startAngle: 0,
         sweepAngle: 360,
-        rotateObjects: false,
+        rotateMode: 'radial',
         sourceElement: source,
         previewElements: [],
       });
-      showToast('캔버스를 클릭해 중심점을 지정하세요. 드래그로 반지름을 정합니다.');
+      showToast('① 캔버스를 클릭해 중심점 지정 → ② 마우스로 반지름 조절 → ③ Enter 확정');
     },
     [showToast]
+  );
+
+  /**
+   * Start the radial tool with the given element as the source.
+   * Used by the "방사상 복제" shortcut in the properties panel.
+   */
+  const handleCreateRadialArray = useCallback(
+    (source: CanvasElement) => {
+      handleRadialStart(source);
+      setCurrentTool('radial');
+    },
+    [handleRadialStart]
   );
 
   /** First click: the center of the array is placed. */
@@ -308,19 +321,23 @@ export default function App() {
     setRadialToolState((prev) => ({ ...prev, radius: Math.max(1, Math.round(radius) || 1) }));
   }, []);
 
-  const handleRadialToggleRotate = useCallback((rotate: boolean) => {
-    setRadialToolState((prev) => ({ ...prev, rotateObjects: rotate }));
+  const handleRadialSetRotateMode = useCallback((mode: RadialRotateMode) => {
+    setRadialToolState((prev) => ({ ...prev, rotateMode: mode }));
+  }, []);
+
+  const handleRadialToggleHideSource = useCallback((hide: boolean) => {
+    setRadialToolState((prev) => ({ ...prev, hideSource: hide }));
   }, []);
 
   const handleRadialCancel = useCallback(() => {
     radialAngleLockedRef.current = false;
     setRadialToolState({
       step: 'idle',
-      radius: 100,
-      count: 8,
+      radius: 120,
+      count: 12,
       startAngle: 0,
       sweepAngle: 360,
-      rotateObjects: false,
+      rotateMode: 'radial',
       previewElements: [],
     });
     showToast('방사상 배열을 취소했습니다.');
@@ -403,7 +420,7 @@ export default function App() {
     radialToolState.count,
     radialToolState.startAngle,
     radialToolState.sweepAngle,
-    radialToolState.rotateObjects,
+    radialToolState.rotateMode,
     radialToolState.sourceElement,
   ]);
 
@@ -450,7 +467,7 @@ export default function App() {
    * Defined after pushHistory so the history snapshot can be pushed directly.
    */
   const handleRadialConfirm = useCallback(() => {
-    const { center, previewElements } = radialToolState;
+    const { center, previewElements, hideSource, sourceElement } = radialToolState;
     if (!center || previewElements.length === 0) {
       showToast('방사상 위치를 먼저 지정하세요.');
       return;
@@ -461,7 +478,13 @@ export default function App() {
       id: `radial-${stamp}-${i}`,
       name: el.name.replace(/\s*\(방사상.*\)$/, ''),
     }));
-    const nextElements = [...elements, ...newElements];
+    // Optionally hide the source so only the finished ring remains.
+    const nextElements = hideSource && sourceElement
+      ? [
+          ...elements.map((el) => (el.id === sourceElement.id ? { ...el, visible: false } : el)),
+          ...newElements,
+        ]
+      : [...elements, ...newElements];
     setElements(nextElements);
     setSelectedElementIds(newElements.map((e) => e.id));
     pushHistory(nextElements, layers, config);
@@ -2235,6 +2258,16 @@ export default function App() {
             }
             break;
           }
+          case 'r': {
+            // Radial array – needs a selected element to replicate
+            const currentSelected = elements.find((el) => el.id === selectedElementId);
+            if (currentSelected) {
+              handleCreateRadialArray(currentSelected);
+            } else {
+              handleSelectTool('radial'); // shows the "select an element first" hint
+            }
+            break;
+          }
         }
       }
     };
@@ -2446,9 +2479,11 @@ export default function App() {
           onRadialUpdateSweepAngle={handleRadialUpdateSweepAngle}
           onRadialUpdateStartAngle={handleRadialUpdateStartAngle}
           onRadialUpdateRadius={handleRadialUpdateRadiusValue}
-          onRadialToggleRotate={handleRadialToggleRotate}
+          onRadialSetRotateMode={handleRadialSetRotateMode}
+          onRadialToggleHideSource={handleRadialToggleHideSource}
           onRadialConfirm={handleRadialConfirm}
           onRadialCancel={handleRadialCancel}
+          onCreateRadialArray={handleCreateRadialArray}
       />
 
       {/* Modals */}

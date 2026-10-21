@@ -611,7 +611,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
               : 'text-stone-300 hover:text-white hover:bg-stone-800'
           }`}
-          title="방사상 객체 생성 (Radial Array) — 중심점 기준 원형/부분 원형 반복 배치"
+          title="방사상 배열 (R) — 선택한 개체를 원형으로 반복 배치. 캔버스 클릭(중심) → 반지름 조절 → Enter 확정"
         >
           <RotateCcw className="w-4 h-4" />
         </button>

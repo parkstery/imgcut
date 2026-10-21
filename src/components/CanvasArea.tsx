@@ -2557,20 +2557,77 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                     />
                   );
                 })}
-                {/* Center marker */}
-                <circle
-                  cx={radialToolState.center.x}
-                  cy={radialToolState.center.y}
-                  r={4}
-                  fill="#F59E0B"
-                  stroke="#1C1917"
-                  strokeWidth={1}
-                />
+                {/* Center marker – makes the pivot of the array obvious */}
+                <g transform={`translate(${radialToolState.center.x} ${radialToolState.center.y})`}>
+                  <circle
+                    r={13}
+                    fill="none"
+                    stroke="#F59E0B"
+                    strokeWidth={1.5}
+                    strokeDasharray="3 2"
+                    opacity={0.9}
+                  />
+                  <circle r={7} fill="none" stroke="#F59E0B" strokeWidth={1} opacity={0.55} />
+                  <line x1={-20} y1={0} x2={-13} y2={0} stroke="#F59E0B" strokeWidth={1.5} />
+                  <line x1={13} y1={0} x2={20} y2={0} stroke="#F59E0B" strokeWidth={1.5} />
+                  <line x1={0} y1={-20} x2={0} y2={-13} stroke="#F59E0B" strokeWidth={1.5} />
+                  <line x1={0} y1={13} x2={0} y2={20} stroke="#F59E0B" strokeWidth={1.5} />
+                  <circle r={3.5} fill="#F59E0B" stroke="#1C1917" strokeWidth={1} />
+                  <text
+                    x={0}
+                    y={-26}
+                    textAnchor="middle"
+                    fill="#FBBF24"
+                    fontSize={11}
+                    fontWeight={600}
+                    stroke="#1C1917"
+                    strokeWidth={2.5}
+                    paintOrder="stroke"
+                    style={{ letterSpacing: '-0.02em' }}
+                  >
+                    중심
+                  </text>
+                </g>
               </>
             )}
             {radialToolState.previewElements.map((el) => (
               <RadialPreviewItem key={el.id} el={el} />
             ))}
+          </g>
+        )}
+
+        {/* Radial Array – "click here to set the center" hint */}
+        {currentTool === 'radial' && radialToolState?.step === 'placing_center' && (
+          <g pointerEvents="none" transform={`translate(${cursorPos.x} ${cursorPos.y})`}>
+            <circle
+              r={16}
+              fill="none"
+              stroke="#F59E0B"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              opacity={0.9}
+            >
+              <animate
+                attributeName="r"
+                values="12;20;12"
+                dur="1.6s"
+                repeatCount="indefinite"
+              />
+            </circle>
+            <circle r={3} fill="#F59E0B" />
+            <text
+              x={0}
+              y={-26}
+              textAnchor="middle"
+              fill="#FBBF24"
+              fontSize={11}
+              fontWeight={600}
+              stroke="#1C1917"
+              strokeWidth={2.5}
+              paintOrder="stroke"
+            >
+              여기를 클릭 → 중심점
+            </text>
           </g>
         )}
 
@@ -3323,6 +3380,33 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           </div>
         )}
       </div>
+
+      {/* Radial Array – step guide banner */}
+      {currentTool === 'radial' && radialToolState && radialToolState.step !== 'idle' && (
+        <div className="absolute top-9 left-1/2 -translate-x-1/2 z-20 bg-stone-900/95 backdrop-blur border border-amber-500/50 rounded-lg px-3.5 py-2 text-[11px] text-stone-200 flex items-center gap-3 shadow-xl pointer-events-none">
+          <span className="font-semibold text-amber-300">방사상 배열</span>
+          <span className="text-stone-400">
+            {radialToolState.step === 'placing_center'
+              ? '① 캔버스를 클릭해 중심점 지정'
+              : radialToolState.step === 'adjusting_radius'
+              ? '② 마우스를 움직여 반지름 조절'
+              : '③ 반지름 고정됨'}
+          </span>
+          <span className="text-stone-600">|</span>
+          <span className="text-stone-400">
+            <kbd className="px-1 py-0.5 rounded bg-stone-800 border border-stone-700 text-amber-300 font-mono text-[10px] font-bold">
+              Enter
+            </kbd>{' '}
+            확정
+          </span>
+          <span className="text-stone-400">
+            <kbd className="px-1 py-0.5 rounded bg-stone-800 border border-stone-700 text-amber-300 font-mono text-[10px] font-bold">
+              Esc
+            </kbd>{' '}
+            취소
+          </span>
+        </div>
+      )}
 
       {/* Bottom Status Info Bar */}
       <div className="absolute bottom-2 right-4 bg-stone-900/90 backdrop-blur border border-stone-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-stone-400 flex items-center space-x-4 pointer-events-none z-10 shadow-lg">

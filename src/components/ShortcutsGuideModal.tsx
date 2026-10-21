@@ -17,6 +17,7 @@ const SHORTCUTS = [
   { key: 'K', desc: '스포이트 색상 추출' },
   { key: 'G', desc: '페인트통 / 채우기' },
   { key: 'C', desc: '자르기/캡쳐 도구 (드래그로 화면 영역 지정)' },
+  { key: 'R', desc: '방사상 배열 도구 (선택한 개체를 원형으로 반복 배치)' },
   { key: 'Ctrl + X', desc: '드래그 영역 또는 선택 객체 오리기' },
   { key: 'Ctrl + C', desc: '드래그 영역 또는 선택 객체 복사' },
   { key: 'Ctrl + V', desc: '오리기/복사한 이미지 또는 객체 붙여넣기' },
@@ -36,6 +37,7 @@ const SHORTCUTS = [
   { key: 'Shift + 드래그', desc: '이동 시 수평/수직 직선만 / 도형 정비율(1:1) / 직선·연속선 각도스냅' },
   { key: '연속 선그리기', desc: '클릭으로 노드 연결 → 더블클릭 또는 Enter로 완료' },
   { key: '아크 그리기', desc: '시작점 → 끝점 → 드래그로 반지름 지정 후 클릭/Enter 완료' },
+  { key: '방사상 배열', desc: '개체 선택 → R → 캔버스 클릭(중심) → 마우스로 반지름 → Enter 확정' },
 ];
 
 export const ShortcutsGuideModal: React.FC<ShortcutsGuideModalProps> = ({ isOpen, onClose }) => {

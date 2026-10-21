@@ -6,6 +6,7 @@ import {
   ImageElement,
   CanvasConfig,
   RadialToolState,
+  RadialRotateMode,
 } from '../types';
 import { FONT_FAMILIES } from '../utils/colorUtils';
 import { finalizeArcGeometry } from '../utils/shapeGenerators';
@@ -34,6 +35,7 @@ import {
   Scissors,
   Lock,
   LockOpen,
+  CircleDotDashed,
 } from 'lucide-react';
 
 /** Visual property section card with clear title bar */
@@ -105,9 +107,12 @@ interface PropertiesPanelProps {
   onRadialUpdateSweepAngle?: (angle: number) => void;
   onRadialUpdateStartAngle?: (angle: number) => void;
   onRadialUpdateRadius?: (radius: number) => void;
-  onRadialToggleRotate?: (rotate: boolean) => void;
+  onRadialSetRotateMode?: (mode: RadialRotateMode) => void;
+  onRadialToggleHideSource?: (hide: boolean) => void;
   onRadialConfirm?: () => void;
   onRadialCancel?: () => void;
+  /** Start the radial tool with the currently selected element */
+  onCreateRadialArray?: (source: CanvasElement) => void;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
@@ -141,9 +146,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onRadialUpdateSweepAngle,
   onRadialUpdateStartAngle,
   onRadialUpdateRadius,
-  onRadialToggleRotate,
+  onRadialSetRotateMode,
+  onRadialToggleHideSource,
   onRadialConfirm,
   onRadialCancel,
+  onCreateRadialArray,
 }) => {
   const [canvasWidthDraft, setCanvasWidthDraft] = useState(String(config.width));
   const [canvasHeightDraft, setCanvasHeightDraft] = useState(String(config.height));
@@ -420,6 +427,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <span className="text-[11px] text-stone-400">{selectedElement.name || selectedElement.type}</span>
         </div>
         <div className="flex items-center space-x-1">
+          {onCreateRadialArray && (
+            <button
+              id="btn-radial-array"
+              onClick={() => onCreateRadialArray(selectedElement)}
+              className="p-1.5 rounded text-stone-400 hover:text-amber-300 hover:bg-stone-800"
+              title="방사상 복제 — 이 개체를 원형으로 반복 배치 (R)"
+            >
+              <CircleDotDashed className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             id="btn-duplicate-elem"
             onClick={() => onDuplicateElement(selectedElement)}
@@ -519,14 +536,47 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <span className="text-[10px] text-stone-500 shrink-0">°</span>
           </div>
 
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-stone-400">복사본 방향</span>
+            <div className="grid grid-cols-3 gap-1">
+              {(
+                [
+                  { mode: 'none' as RadialRotateMode, label: '고정', hint: '모든 복사본이 원래 방향 유지' },
+                  { mode: 'tangential' as RadialRotateMode, label: '원주', hint: '원을 따라 순서대로 회전 (연속)' },
+                  { mode: 'radial' as RadialRotateMode, label: '방사', hint: '중심에서 바깥쪽을 향함 (태양살)' },
+                ]
+              ).map((opt) => (
+                <button
+                  key={opt.mode}
+                  onClick={() => onRadialSetRotateMode?.(opt.mode)}
+                  title={opt.hint}
+                  className={`px-1 py-1 rounded text-[10px] font-medium border transition-colors ${
+                    radialToolState.rotateMode === opt.mode
+                      ? 'bg-amber-500 text-stone-950 border-amber-500 font-bold'
+                      : 'bg-stone-800 text-stone-300 border-stone-700 hover:bg-stone-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-stone-500 leading-tight">
+              {radialToolState.rotateMode === 'radial'
+                ? '복사본이 중심에서 바깥쪽을 향합니다 (태양살 모양).'
+                : radialToolState.rotateMode === 'tangential'
+                ? '복사본이 원을 따라 순서대로 회전합니다.'
+                : '모든 복사본이 원래 방향을 유지합니다.'}
+            </p>
+          </div>
+
           <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-stone-300">
             <input
               type="checkbox"
-              checked={radialToolState.rotateObjects}
-              onChange={(e) => onRadialToggleRotate?.(e.target.checked)}
+              checked={!!radialToolState.hideSource}
+              onChange={(e) => onRadialToggleHideSource?.(e.target.checked)}
               className="accent-amber-500 w-3.5 h-3.5"
             />
-            <span>복사본을 원주를 따라 회전</span>
+            <span>확정 후 원본 숨기기 (완전한 고리만 남김)</span>
           </label>
 
           <div className="grid grid-cols-2 gap-2 pt-1">

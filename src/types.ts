@@ -186,6 +186,12 @@ export type RadialStep =
   | 'adjusting_radius' // dragging to set the radius
   | 'preview'; // preview shown, waiting for confirm / cancel
 
+/** How the copies of a radial array are oriented */
+export type RadialRotateMode =
+  | 'none' // every copy keeps the original orientation
+  | 'tangential' // copies follow the circle (pinwheel / swirl)
+  | 'radial'; // copies point away from the center (sunburst)
+
 export interface RadialToolState {
   step: RadialStep;
   /** Center of the array in canvas coordinates */
@@ -198,8 +204,10 @@ export interface RadialToolState {
   startAngle: number;
   /** Angular span covered by the array, in degrees (0-360) */
   sweepAngle: number;
-  /** Rotate each copy so it faces away from the center */
-  rotateObjects: boolean;
+  /** Orientation of the copies */
+  rotateMode: RadialRotateMode;
+  /** Hide the source element once the array is created (keeps only the ring) */
+  hideSource?: boolean;
   /** Element that gets replicated */
   sourceElement?: CanvasElement;
   /** Live preview of the copies */
