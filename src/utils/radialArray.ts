@@ -3,6 +3,9 @@ import {
   CanvasElement,
   RadialToolState,
 } from '../types';
+import { getRotationPivot } from './elementGeometry';
+
+export { getRotationPivot } from './elementGeometry';
 
 /** Normalize an angle in degrees into the [0, 360) range. */
 export function normalizeAngle(angle: number): number {
@@ -29,6 +32,11 @@ export function getRadialAngles(state: RadialToolState): number[] {
 }
 
 /**
+ * The point an element is rotated around, relative to its top-left corner.
+ * Straight lines and arrow lines rotate around their start point,
+ * every other element around the centre of its bounding box.
+ */
+/**
  * Build the copies of `source` arranged on a circle.
  * Used for the live preview while the user drags, and reused when the
  * parameters in the properties panel change.
@@ -48,8 +56,6 @@ export function buildRadialPreview(
     const rad = (theta * Math.PI) / 180;
     const px = center.x + radius * Math.cos(rad);
     const py = center.y + radius * Math.sin(rad);
-    const x = px - baseW / 2;
-    const y = py - baseH / 2;
     // Orientation of the copy:
     // - none      : every copy keeps the original angle
     // - tangential: copies follow the circle (first copy keeps its angle)
@@ -60,6 +66,20 @@ export function buildRadialPreview(
         : state.rotateMode === 'tangential'
         ? baseRotation + (theta - state.startAngle)
         : baseRotation;
+
+    // The element is rotated around its own pivot, which is NOT always the
+    // centre of its bounding box: lines and arrow lines rotate around their
+    // start point. Compensate so that the visual centre of every copy lands
+    // exactly on the circle (otherwise the whole ring drifts sideways).
+    const pivot = getRotationPivot(source);
+    const dx = baseW / 2 - pivot.x;
+    const dy = baseH / 2 - pivot.y;
+    const cr = Math.cos((rot * Math.PI) / 180);
+    const sr = Math.sin((rot * Math.PI) / 180);
+    const pivotX = px - (dx * cr - dy * sr);
+    const pivotY = py - (dx * sr + dy * cr);
+    const x = pivotX - pivot.x;
+    const y = pivotY - pivot.y;
 
     const copy = {
       ...(source as CanvasElement),

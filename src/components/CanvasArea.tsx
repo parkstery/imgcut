@@ -16,6 +16,7 @@ import {
   RadialStep,
 } from '../types';
 import { getShapePath, getPolylinePath, finalizePolylineGeometry, getArcPath, computeArcFromChordAndBend, finalizeArcGeometry } from '../utils/shapeGenerators';
+import { getRotationOriginAttr } from '../utils/elementGeometry';
 import { generateBrushSmoothPath } from '../utils/svgExport';
 import { sampleColorFromCanvas } from '../utils/rasterExport';
 import { getToolCursor } from '../utils/cursorUtils';
@@ -102,11 +103,7 @@ const RadialPreviewItem: React.FC<{ el: CanvasElement }> = ({ el }) => {
     <g transform={flipT} opacity={0.7}>
       {el.type === 'shape' && (
         <g
-          transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${
-            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
-              ? `0 ${el.height / 2}`
-              : `${el.width / 2} ${el.height / 2}`
-          })`}
+          transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${getRotationOriginAttr(el)})`}
         >
           <path
             d={
@@ -2245,11 +2242,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       {/* SHAPE ELEMENT */}
                       {el.type === 'shape' && (
                         <g
-                          transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${
-                            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
-                              ? `0 ${el.height / 2}`
-                              : `${el.width / 2} ${el.height / 2}`
-                          })`}
+                          transform={`translate(${el.x}, ${el.y}) rotate(${rot} ${getRotationOriginAttr(el)})`}
                         >
                           {/* Invisible Extra-Wide Hitbox for 1-Click Selection */}
                           {el.shapeType === 'line' || el.shapeType.startsWith('line-arrow') ? (

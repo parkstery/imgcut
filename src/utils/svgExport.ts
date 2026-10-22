@@ -1,5 +1,6 @@
 import { CanvasConfig, CanvasElement, Layer } from '../types';
 import { getShapePath, getPolylinePath, getArcPath } from './shapeGenerators';
+import { getRotationOriginAttr } from './elementGeometry';
 
 export function generateSVGString(
   layers: Layer[],
@@ -101,10 +102,7 @@ export function generateSVGString(
           if (el.strokeDash === 'dashed') dashAttr = 'stroke-dasharray="8 6"';
           if (el.strokeDash === 'dotted') dashAttr = 'stroke-dasharray="3 4"';
 
-          const rotOrigin =
-            el.shapeType === 'line' || el.shapeType.startsWith('line-arrow')
-              ? `0 ${el.height / 2}`
-              : `${el.width / 2} ${el.height / 2}`;
+          const rotOrigin = getRotationOriginAttr(el);
           const rotAttr = rot !== 0 ? `transform="rotate(${rot} ${rotOrigin})"` : '';
           const lineCaps = isLine ? 'stroke-linecap="round" stroke-linejoin="round"' : '';
 
