@@ -2441,6 +2441,9 @@ export default function App() {
             radialToolState={radialToolState}
             onRadialSetCenter={handleRadialSetCenter}
             onRadialUpdateRadius={handleRadialUpdateRadius}
+            onRadialConfirm={handleRadialConfirm}
+            onRadialCancel={handleRadialCancel}
+            onRadialStart={handleRadialStart}
             onRadialSetStep={handleRadialSetStep}
           />
       </div>
