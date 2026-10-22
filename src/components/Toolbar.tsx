@@ -29,10 +29,10 @@ import {
   Spline,
   ChevronDown,
   X,
-  RotateCcw,
 } from 'lucide-react';
 import { ToolType, ShapeType } from '../types';
 import { OFFICE_THEME_PALETTES, PAINT_COLORS } from '../utils/colorUtils';
+import { RadialArrayIcon } from './RadialArrayIcon';
 
 interface ToolbarProps {
   currentTool: ToolType;
@@ -613,7 +613,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           }`}
           title="방사상 배열 (R) — 선택한 개체를 원형으로 반복 배치. 캔버스 클릭(중심) → 반지름 조절 → Enter 확정"
         >
-          <RotateCcw className="w-4 h-4" />
+          <RadialArrayIcon className="w-5 h-5" />
         </button>
 
         {/* Empty spacer (~1 button width) so the crop button stands out */}

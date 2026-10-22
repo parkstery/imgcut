@@ -35,8 +35,8 @@ import {
   Scissors,
   Lock,
   LockOpen,
-  CircleDotDashed,
 } from 'lucide-react';
+import { RadialArrayIcon } from './RadialArrayIcon';
 
 /** Visual property section card with clear title bar */
 const PropertyGroup: React.FC<{
@@ -434,7 +434,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               className="p-1.5 rounded text-stone-400 hover:text-amber-300 hover:bg-stone-800"
               title="방사상 복제 — 이 개체를 원형으로 반복 배치 (R)"
             >
-              <CircleDotDashed className="w-3.5 h-3.5" />
+              <RadialArrayIcon className="w-4 h-4" />
             </button>
           )}
           <button
