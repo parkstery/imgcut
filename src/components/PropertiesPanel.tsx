@@ -37,6 +37,7 @@ import {
   LockOpen,
 } from 'lucide-react';
 import { RadialArrayIcon } from './RadialArrayIcon';
+import { NumberField } from './NumberField';
 
 /** Visual property section card with clear title bar */
 const PropertyGroup: React.FC<{
@@ -488,23 +489,21 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-stone-400 w-14 shrink-0">개수</span>
-            <input
-              type="number"
+            <NumberField
+              value={radialToolState.count}
               min={2}
               max={50}
-              value={radialToolState.count}
-              onChange={(e) => onRadialUpdateCount?.(parseInt(e.target.value) || 2)}
+              onChange={(v) => onRadialUpdateCount?.(v)}
               className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-stone-400 w-14 shrink-0">반지름</span>
-            <input
-              type="number"
+            <NumberField
+              value={radialToolState.radius}
               min={1}
-              value={Math.round(radialToolState.radius)}
-              onChange={(e) => onRadialUpdateRadius?.(parseInt(e.target.value) || 1)}
+              onChange={(v) => onRadialUpdateRadius?.(v)}
               className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
             <span className="text-[10px] text-stone-500 shrink-0">px</span>
@@ -512,12 +511,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-stone-400 w-14 shrink-0">시작 각도</span>
-            <input
-              type="number"
+            <NumberField
+              value={radialToolState.startAngle}
               min={0}
               max={360}
-              value={Math.round(radialToolState.startAngle)}
-              onChange={(e) => onRadialUpdateStartAngle?.(parseInt(e.target.value) || 0)}
+              onChange={(v) => onRadialUpdateStartAngle?.(v)}
               className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
             <span className="text-[10px] text-stone-500 shrink-0">°</span>
@@ -525,12 +523,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-stone-400 w-14 shrink-0">범위</span>
-            <input
-              type="number"
+            <NumberField
+              value={radialToolState.sweepAngle}
               min={0}
               max={360}
-              value={Math.round(radialToolState.sweepAngle)}
-              onChange={(e) => onRadialUpdateSweepAngle?.(parseInt(e.target.value) || 0)}
+              onChange={(v) => onRadialUpdateSweepAngle?.(v)}
               className="flex-1 min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
             <span className="text-[10px] text-stone-500 shrink-0">°</span>
@@ -624,23 +621,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] text-stone-500 shrink-0 w-10">X</span>
-            <input
-              type="number"
+            <NumberField
               value={Math.round(selectedElement.x)}
-              onChange={(e) =>
-                onUpdateElement({ ...selectedElement, x: parseFloat(e.target.value) || 0 })
-              }
+              onChange={(v) => onUpdateElement({ ...selectedElement, x: v })}
               className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] text-stone-500 shrink-0 w-10">Y</span>
-            <input
-              type="number"
+            <NumberField
               value={Math.round(selectedElement.y)}
-              onChange={(e) =>
-                onUpdateElement({ ...selectedElement, y: parseFloat(e.target.value) || 0 })
-              }
+              onChange={(v) => onUpdateElement({ ...selectedElement, y: v })}
               className="w-full min-w-0 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono text-xs focus:border-amber-500"
             />
           </div>
@@ -648,12 +639,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <span className="text-[10px] text-stone-500 shrink-0 w-10">
               {isStraightLine ? '길이' : 'W'}
             </span>
-            <input
-              type="number"
+            <NumberField
               value={Math.round(selectedElement.width)}
-              min="5"
-              onChange={(e) => {
-                const w = Math.max(5, parseFloat(e.target.value) || 10);
+              min={5}
+              onChange={(w) => {
                 if (isImage && img?.lockAspectRatio && selectedElement.height > 0) {
                   const ratio = selectedElement.width / selectedElement.height;
                   onUpdateElement({
@@ -671,13 +660,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           {isStraightLine ? (
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[10px] text-stone-500 shrink-0 w-10">굵기</span>
-              <input
-                type="number"
+              <NumberField
                 value={shape?.strokeWidth || 2}
-                min="1"
-                max="50"
-                onChange={(e) => {
-                  const sw = Math.max(1, parseInt(e.target.value) || 2);
+                min={1}
+                max={50}
+                onChange={(sw) => {
                   onUpdateElement({
                     ...shape!,
                     strokeWidth: sw,
@@ -690,12 +677,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           ) : (
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[10px] text-stone-500 shrink-0 w-10">H</span>
-              <input
-                type="number"
+              <NumberField
                 value={Math.round(selectedElement.height)}
-                min="5"
-                onChange={(e) => {
-                  const h = Math.max(5, parseFloat(e.target.value) || 10);
+                min={5}
+                onChange={(h) => {
                   if (isImage && img?.lockAspectRatio && selectedElement.width > 0) {
                     const ratio = selectedElement.width / selectedElement.height;
                     onUpdateElement({
@@ -743,15 +728,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             }}
             className="flex-1 accent-amber-500"
           />
-          <input
+          <NumberField
             id="rotation-degrees-input"
-            type="number"
-            min="0"
-            max="359"
             value={selectedElement.rotation || 0}
-            onChange={(e) => {
-              const parsed = parseInt(e.target.value, 10);
-              if (!Number.isFinite(parsed)) return;
+            onChange={(parsed) => {
               const normalized = ((parsed % 360) + 360) % 360;
               if (!rotateMode) setRotateMode(true);
               onUpdateElement({ ...selectedElement, rotation: normalized });
@@ -1056,13 +1036,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </button>
               )}
               <div className="flex items-center space-x-1 flex-1">
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
+                <NumberField
                   value={shape.strokeWidth}
-                  onChange={(e) => {
-                    const sw = Math.max(1, parseInt(e.target.value) || 1);
+                  min={1}
+                  max={50}
+                  onChange={(sw) => {
                     onUpdateElement({
                       ...shape,
                       strokeWidth: sw,
@@ -1174,11 +1152,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     }}
                     className="flex-1 accent-amber-500"
                   />
-                  <input
-                    type="number"
-                    min={1}
+                  <NumberField
                     value={Math.round(shape.arcRadius || 0)}
-                    onChange={(e) => {
+                    onChange={(radius) => {
                       const absStart = {
                         x: shape.x + shape.points![0].x,
                         y: shape.y + shape.points![0].y,
@@ -1189,7 +1165,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       };
                       const L = Math.hypot(absEnd.x - absStart.x, absEnd.y - absStart.y);
                       const minR = L / 2 + 0.5;
-                      const r = Math.max(minR, parseFloat(e.target.value) || minR);
+                      const r = Math.max(minR, radius);
                       const geom = finalizeArcGeometry(
                         absStart,
                         absEnd,
@@ -1420,14 +1396,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <span className="text-[10px] text-stone-500 block mb-1">글자 크기 (px)</span>
-              <input
-                type="number"
-                min="8"
-                max="180"
+              <NumberField
                 value={text.fontSize}
-                onChange={(e) =>
-                  onUpdateElement({ ...text, fontSize: Math.max(8, parseInt(e.target.value) || 12) })
-                }
+                min={8}
+                max={180}
+                onChange={(v) => onUpdateElement({ ...text, fontSize: v })}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 font-mono text-stone-100"
               />
             </div>
@@ -1817,13 +1790,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[10px] text-stone-500 block mb-0.5">X 오프셋</span>
-                <input
-                  type="number"
+                <NumberField
                   value={selectedElement.shadow.offsetX}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     onUpdateElement({
                       ...selectedElement,
-                      shadow: { ...selectedElement.shadow!, offsetX: parseInt(e.target.value) || 0 },
+                      shadow: { ...selectedElement.shadow!, offsetX: v },
                     })
                   }
                   className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono"
@@ -1831,13 +1803,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </div>
               <div>
                 <span className="text-[10px] text-stone-500 block mb-0.5">Y 오프셋</span>
-                <input
-                  type="number"
+                <NumberField
                   value={selectedElement.shadow.offsetY}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     onUpdateElement({
                       ...selectedElement,
-                      shadow: { ...selectedElement.shadow!, offsetY: parseInt(e.target.value) || 0 },
+                      shadow: { ...selectedElement.shadow!, offsetY: v },
                     })
                   }
                   className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-100 font-mono"
