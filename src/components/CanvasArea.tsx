@@ -756,8 +756,12 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       const step = radialToolState?.step;
 
       if (step === 'placing_center') {
-        // First click: place the center of the array.
-        onRadialSetCenter?.(pt.x, pt.y);
+        // First click: place the center of the array (snapped to the grid when
+        // grid snapping is enabled).
+        const snapped = config.snapToGrid
+          ? { x: snapValue(pt.x), y: snapValue(pt.y) }
+          : pt;
+        onRadialSetCenter?.(snapped.x, snapped.y);
         return;
       }
 
@@ -2591,7 +2595,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
         {/* Radial Array – "click here to set the center" hint */}
         {currentTool === 'radial' && radialToolState?.step === 'placing_center' && (
-          <g pointerEvents="none" transform={`translate(${cursorPos.x} ${cursorPos.y})`}>
+          <g
+            pointerEvents="none"
+            transform={`translate(${
+              config.snapToGrid ? snapValue(cursorPos.x) : cursorPos.x
+            } ${
+              config.snapToGrid ? snapValue(cursorPos.y) : cursorPos.y
+            })`}
+          >
             <circle
               r={16}
               fill="none"

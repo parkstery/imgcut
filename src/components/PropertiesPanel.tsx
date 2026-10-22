@@ -434,7 +434,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               className="p-1.5 rounded text-stone-400 hover:text-amber-300 hover:bg-stone-800"
               title="방사상 복제 — 이 개체를 원형으로 반복 배치 (R)"
             >
-              <RadialArrayIcon className="w-4 h-4" />
+              <RadialArrayIcon className="w-3.5 h-3.5" />
             </button>
           )}
           <button

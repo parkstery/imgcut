@@ -220,18 +220,6 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
         {/* View toggles: Grid, Ruler, Snap */}
         <div className="flex items-center space-x-1 px-2 border-r border-stone-800">
           <button
-            id="btn-toggle-grid"
-            onClick={() => onUpdateConfig({ showGrid: !config.showGrid })}
-            className={`p-1.5 rounded transition-colors ${
-              config.showGrid
-                ? 'bg-amber-500/20 text-amber-400'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-            }`}
-            title="그리드 격자 표시/숨기기"
-          >
-            <Grid className="w-4 h-4" />
-          </button>
-          <button
             id="btn-toggle-ruler"
             onClick={() => onUpdateConfig({ showRulers: !config.showRulers })}
             className={`p-1.5 rounded transition-colors ${
@@ -242,6 +230,18 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="눈금자 표시/숨기기"
           >
             <Ruler className="w-4 h-4" />
+          </button>
+          <button
+            id="btn-toggle-grid"
+            onClick={() => onUpdateConfig({ showGrid: !config.showGrid })}
+            className={`p-1.5 rounded transition-colors ${
+              config.showGrid
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+            }`}
+            title="그리드 격자 표시/숨기기"
+          >
+            <Grid className="w-4 h-4" />
           </button>
           <button
             id="btn-toggle-snap"
