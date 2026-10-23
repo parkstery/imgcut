@@ -10,7 +10,7 @@ import {
   Type,
   Pipette,
   PaintBucket,
-  Crop,
+  Camera,
   Square,
   Circle,
   Triangle,
@@ -597,9 +597,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               ? 'bg-amber-500 text-stone-950 font-bold shadow-md border-amber-400 ring-2 ring-amber-400/60'
               : 'text-amber-300 bg-amber-500/15 border-amber-500/50 hover:bg-amber-500/30 hover:text-amber-100'
           }`}
-          title="화면 영역 캡쳐 및 자르기 (Crop) - 드래그 후 Ctrl+C로 캡쳐 복사, Ctrl+V로 붙여넣기 (C)"
+          title="화면 캡처 (Crop) - 드래그 후 Ctrl+C로 캡처 복사, Ctrl+V로 붙여넣기 (C)"
         >
-          <Crop className="w-4 h-4" />
+          <Camera className="w-4 h-4" />
         </button>
 
         {/* Radial Object Tool — create radial arrays of objects */}
