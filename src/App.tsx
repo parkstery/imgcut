@@ -1353,6 +1353,45 @@ export default function App() {
     [selectedElementId, elements, config, handleUpdateElement]
   );
 
+  // Group / Ungroup
+  const handleGroup = useCallback(() => {
+    if (selectedElementIds.length < 2) {
+      showToast('그룹화할 객체를 2개 이상 선택하세요.');
+      return;
+    }
+    const groupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const nextElements = elements.map((el) =>
+      selectedElementIds.includes(el.id) ? { ...el, groupId } : el
+    );
+    setElements(nextElements);
+    pushHistory(nextElements, layers, config);
+    showToast(`${selectedElementIds.length}개 객체를 그룹화했습니다.`);
+  }, [selectedElementIds, elements, layers, config, pushHistory, showToast]);
+
+  const handleUngroup = useCallback(() => {
+    if (selectedElementIds.length === 0) {
+      showToast('해제할 그룹을 선택하세요.');
+      return;
+    }
+    // Find all groupIds among selected elements
+    const groupIds = new Set(
+      elements
+        .filter((el) => selectedElementIds.includes(el.id))
+        .map((el) => el.groupId)
+        .filter((g): g is string => Boolean(g))
+    );
+    if (groupIds.size === 0) {
+      showToast('선택된 객체 중 그룹화된 것이 없습니다.');
+      return;
+    }
+    const nextElements = elements.map((el) =>
+      groupIds.has(el.groupId) ? { ...el, groupId: undefined } : el
+    );
+    setElements(nextElements);
+    pushHistory(nextElements, layers, config);
+    showToast('그룹을 해제했습니다.');
+  }, [selectedElementIds, elements, layers, config, pushHistory, showToast]);
+
   // Update Config
   const handleUpdateConfig = useCallback(
     (partial: Partial<CanvasConfig>) => {
@@ -2151,6 +2190,17 @@ export default function App() {
         return;
       }
 
+      // Group: Ctrl+G, Ungroup: Ctrl+Shift+G
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleUngroup();
+        } else {
+          handleGroup();
+        }
+        return;
+      }
+
       // Copy: Ctrl+C (in crop mode: copy canvas region or image slice, in select mode: copy elements)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
         if (currentTool === 'crop' && activeCanvasCropBoxRef.current && activeCanvasCropBoxRef.current.w >= 5) {
@@ -2373,6 +2423,10 @@ export default function App() {
         onPrimaryColorChange={handlePrimaryColorChange}
         strokeWidth={strokeWidth}
         onStrokeWidthChange={handleStrokeWidthChange}
+        onGroup={handleGroup}
+        onUngroup={handleUngroup}
+        selectedElementIds={selectedElementIds}
+        elements={elements}
       />
 
       {/* 3. Main Workspace: Layers Panel + Canvas */}
@@ -2445,6 +2499,8 @@ export default function App() {
             onRadialCancel={handleRadialCancel}
             onRadialStart={handleRadialStart}
             onRadialSetStep={handleRadialSetStep}
+            onGroup={handleGroup}
+            onUngroup={handleUngroup}
           />
       </div>
       </div>

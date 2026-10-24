@@ -47,6 +47,8 @@ export interface BaseElement {
   /** Mirror the element about its own center (any element type) */
   flipH?: boolean;
   flipV?: boolean;
+  /** Group ID for grouped elements. Elements with the same groupId are treated as a single unit. */
+  groupId?: string;
 }
 
 export interface GradientSettings {

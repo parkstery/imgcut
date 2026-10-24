@@ -29,8 +29,10 @@ import {
   Spline,
   ChevronDown,
   X,
+  Group,
+  Ungroup,
 } from 'lucide-react';
-import { ToolType, ShapeType } from '../types';
+import { ToolType, ShapeType, CanvasElement } from '../types';
 import { OFFICE_THEME_PALETTES, PAINT_COLORS } from '../utils/colorUtils';
 import { RadialArrayIcon } from './RadialArrayIcon';
 
@@ -43,6 +45,11 @@ interface ToolbarProps {
   onPrimaryColorChange: (color: string) => void;
   strokeWidth: number;
   onStrokeWidthChange: (width: number) => void;
+  // Group / Ungroup
+  onGroup?: () => void;
+  onUngroup?: () => void;
+  selectedElementIds: string[];
+  elements: CanvasElement[];
 }
 
 const SHAPE_ITEMS: { type: ShapeType; label: string; icon: React.ReactNode }[] = [
@@ -83,6 +90,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onPrimaryColorChange,
   strokeWidth,
   onStrokeWidthChange,
+  onGroup,
+  onUngroup,
+  selectedElementIds,
+  elements,
 }) => {
   const [showShapeMenu, setShowShapeMenu] = useState(false);
   const [showArrowMenu, setShowArrowMenu] = useState(false);
@@ -601,6 +612,50 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <Camera className="w-4 h-4" />
         </button>
+
+        {/* Radial Object Tool — create radial arrays of objects */}
+        <button
+          id="tool-radial"
+          onClick={() => onSelectTool('radial')}
+          className={`p-2 rounded-md transition-colors ${
+            currentTool === 'radial'
+              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+              : 'text-stone-300 hover:text-white hover:bg-stone-800'
+          }`}
+          title="방사상 배열 (R) — 선택한 개체를 원형으로 반복 배치. 캔버스 클릭(중심) → 반지름 조절 → Enter 확정"
+        >
+          <RadialArrayIcon className="w-4 h-4" />
+        </button>
+
+        {/* Group / Ungroup Tools */}
+        <div className="flex items-center space-x-1 px-2 border-l border-stone-800">
+          <button
+            id="tool-group"
+            onClick={onGroup}
+            className={`p-2 rounded-md transition-colors ${
+              selectedElementIds.length < 2
+                ? 'text-stone-600 cursor-not-allowed'
+                : 'text-stone-400 hover:text-white hover:bg-stone-800'
+            }`}
+            title="그룹화 (Ctrl+G) — 선택한 개체들을 하나의 그룹으로 묶기"
+            disabled={selectedElementIds.length < 2}
+          >
+            <Group className="w-4 h-4" />
+          </button>
+          <button
+            id="tool-ungroup"
+            onClick={onUngroup}
+            className={`p-2 rounded-md transition-colors ${
+              !selectedElementIds.some((id) => elements.some((el) => el.id === id && el.groupId))
+                ? 'text-stone-600 cursor-not-allowed'
+                : 'text-stone-400 hover:text-white hover:bg-stone-800'
+            }`}
+            title="그룹 해제 (Ctrl+Shift+G) — 선택된 그룹을 개별 개체로 풀기"
+            disabled={!selectedElementIds.some((id) => elements.some((el) => el.id === id && el.groupId))}
+          >
+            <Ungroup className="w-4 h-4" />
+          </button>
+        </div>
 
         {/* Radial Object Tool — create radial arrays of objects */}
         <button

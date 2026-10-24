@@ -78,6 +78,9 @@ interface CanvasAreaProps {
   onRadialUpdateRadius?: (radius: number, angle?: number) => void;
   /** Lock / unlock the radius (the radius follows the cursor while unlocked) */
   onRadialSetStep?: (step: RadialStep) => void;
+  // Group / Ungroup
+  onGroup?: () => void;
+  onUngroup?: () => void;
 }
 
 /**
@@ -243,6 +246,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   onRadialSetCenter,
   onRadialUpdateRadius,
   onRadialSetStep,
+  onGroup,
+  onUngroup,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 40, y: 40 });
@@ -972,7 +977,18 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
     if (e.shiftKey) {
       // Toggle element selection with Shift key
-      onToggleSelectElement(el.id, true);
+      // If element belongs to a group, toggle the entire group
+      if (el.groupId) {
+        const groupElements = elements.filter((e) => e.groupId === el.groupId);
+        const allSelected = groupElements.every((e) => selectedElementIds.includes(e.id));
+        if (allSelected) {
+          onSelectMultipleElements(selectedElementIds.filter((id) => !groupElements.some((g) => g.id === id)));
+        } else {
+          onSelectMultipleElements([...selectedElementIds, ...groupElements.map((g) => g.id)]);
+        }
+      } else {
+        onToggleSelectElement(el.id, true);
+      }
       return;
     }
 
@@ -980,7 +996,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     // Clicking an already-selected shape: keep multi-selection for group drag.
     const alreadySelected = selectedElementIds.includes(el.id);
     if (!alreadySelected) {
-      onSelectElement(el.id);
+      // If the element belongs to a group, select all elements in that group
+      if (el.groupId) {
+        const groupElements = elements.filter((e) => e.groupId === el.groupId);
+        onSelectMultipleElements(groupElements.map((e) => e.id));
+      } else {
+        onSelectElement(el.id);
+      }
     }
 
     // Start moving the selected element(s)
