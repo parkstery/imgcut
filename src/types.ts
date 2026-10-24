@@ -210,8 +210,10 @@ export interface RadialToolState {
   rotateMode: RadialRotateMode;
   /** Hide the source element once the array is created (keeps only the ring) */
   hideSource?: boolean;
-  /** Element that gets replicated */
+  /** Element that gets replicated (the primary/reference element) */
   sourceElement?: CanvasElement;
+  /** All elements to be replicated (includes group members if source is grouped) */
+  sourceElements?: CanvasElement[];
   /** Live preview of the copies */
   previewElements: CanvasElement[];
 }

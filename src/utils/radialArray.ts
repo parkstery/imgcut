@@ -32,11 +32,6 @@ export function getRadialAngles(state: RadialToolState): number[] {
 }
 
 /**
- * The point an element is rotated around, relative to its top-left corner.
- * Straight lines and arrow lines rotate around their start point,
- * every other element around the centre of its bounding box.
- */
-/**
  * Build the copies of `source` arranged on a circle.
  * Used for the live preview while the user drags, and reused when the
  * parameters in the properties panel change.
@@ -45,65 +40,91 @@ export function buildRadialPreview(
   state: RadialToolState,
   layerId: string
 ): CanvasElement[] {
-  const { center, sourceElement: source, radius } = state;
-  if (!center || !source) return [];
+  const { center, sourceElement: source, sourceElements, radius } = state;
+  const sources = sourceElements && sourceElements.length > 0 ? sourceElements : (source ? [source] : []);
+  if (!center || sources.length === 0) return [];
 
-  const baseW = source.width;
-  const baseH = source.height;
-  const baseRotation = source.rotation || 0;
+  // Calculate the group bounding box center
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const src of sources) {
+    minX = Math.min(minX, src.x);
+    minY = Math.min(minY, src.y);
+    maxX = Math.max(maxX, src.x + src.width);
+    maxY = Math.max(maxY, src.y + src.height);
+  }
+  const groupCenterX = (minX + maxX) / 2;
+  const groupCenterY = (minY + maxY) / 2;
 
-  return getRadialAngles(state).map((theta, i) => {
+  // Pre-calculate each source element's pivot and its offset from the group center
+  const sourceOffsets = sources.map(src => {
+    const pivot = getRotationPivot(src);
+    return {
+      element: src,
+      // Offset from group center to this element's pivot point
+      offsetX: src.x + pivot.x - groupCenterX,
+      offsetY: src.y + pivot.y - groupCenterY,
+      baseRotation: src.rotation || 0,
+      pivot,
+    };
+  });
+
+  return getRadialAngles(state).flatMap((theta, i) => {
     const rad = (theta * Math.PI) / 180;
     const px = center.x + radius * Math.cos(rad);
     const py = center.y + radius * Math.sin(rad);
+
     // Orientation of the copy:
     // - none      : every copy keeps the original angle
     // - tangential: copies follow the circle (first copy keeps its angle)
     // - radial    : copies point away from the center (sunburst)
-    const rot =
+    const groupRot =
       state.rotateMode === 'radial'
-        ? baseRotation + theta
+        ? theta
         : state.rotateMode === 'tangential'
-        ? baseRotation + (theta - state.startAngle)
-        : baseRotation;
+        ? theta - state.startAngle
+        : 0;
 
-    // The element is rotated around its own pivot, which is NOT always the
-    // centre of its bounding box: lines and arrow lines rotate around their
-    // start point. Compensate so that the visual centre of every copy lands
-    // exactly on the circle (otherwise the whole ring drifts sideways).
-    const pivot = getRotationPivot(source);
-    const dx = baseW / 2 - pivot.x;
-    const dy = baseH / 2 - pivot.y;
-    const cr = Math.cos((rot * Math.PI) / 180);
-    const sr = Math.sin((rot * Math.PI) / 180);
-    const pivotX = px - (dx * cr - dy * sr);
-    const pivotY = py - (dx * sr + dy * cr);
-    const x = pivotX - pivot.x;
-    const y = pivotY - pivot.y;
+    return sourceOffsets.map((offset, srcIndex) => {
+      // Position this element's pivot at the circle radius
+      const cr = Math.cos((groupRot * Math.PI) / 180);
+      const sr = Math.sin((groupRot * Math.PI) / 180);
+      const rotatedOffsetX = offset.offsetX * cr - offset.offsetY * sr;
+      const rotatedOffsetY = offset.offsetX * sr + offset.offsetY * cr;
+      const pivotX = px + rotatedOffsetX;
+      const pivotY = py + rotatedOffsetY;
 
-    const copy = {
-      ...(source as CanvasElement),
-      id: `radial-preview-${i}`,
-      layerId,
-      name: `${source.name} (방사상 ${i + 1})`,
-      x,
-      y,
-      width: baseW,
-      height: baseH,
-      rotation: rot,
-      opacity: source.opacity ?? 1,
-      flipH: source.flipH,
-      flipV: source.flipV,
-      shadow: source.shadow,
-    } as CanvasElement;
+      // Element's top-left corner = pivot position - pivot offset
+      const x = pivotX - offset.pivot.x;
+      const y = pivotY - offset.pivot.y;
 
-    if (source.type === 'brush') {
-      // Brush points are stored in absolute canvas coordinates.
-      (copy as BrushStrokeElement).points = source.points.map((p) => ({
-        x: p.x + (x - source.x),
-        y: p.y + (y - source.y),
-      }));
-    }
-    return copy;
+      // Element's own rotation + group rotation
+      const rot = offset.baseRotation + groupRot;
+
+      const src = offset.element;
+      const copy = {
+        ...(src as CanvasElement),
+        id: `radial-preview-${i}-${srcIndex}`,
+        layerId,
+        name: `${src.name} (방사상 ${i + 1})`,
+        x,
+        y,
+        width: src.width,
+        height: src.height,
+        rotation: rot,
+        opacity: src.opacity ?? 1,
+        flipH: src.flipH,
+        flipV: src.flipV,
+        shadow: src.shadow,
+      } as CanvasElement;
+
+      if (src.type === 'brush') {
+        // Brush points are stored in absolute canvas coordinates.
+        (copy as BrushStrokeElement).points = src.points.map((p) => ({
+          x: p.x + (x - src.x),
+          y: p.y + (y - src.y),
+        }));
+      }
+      return copy;
+    });
   });
 }

@@ -657,20 +657,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* Radial Object Tool — create radial arrays of objects */}
-        <button
-          id="tool-radial"
-          onClick={() => onSelectTool('radial')}
-          className={`p-2 rounded-md transition-colors ${
-            currentTool === 'radial'
-              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
-              : 'text-stone-300 hover:text-white hover:bg-stone-800'
-          }`}
-          title="방사상 배열 (R) — 선택한 개체를 원형으로 반복 배치. 캔버스 클릭(중심) → 반지름 조절 → Enter 확정"
-        >
-          <RadialArrayIcon className="w-4 h-4" />
-        </button>
-
         {/* Empty spacer (~1 button width) so the crop button stands out */}
         <div className="w-9 shrink-0" aria-hidden="true" />
       </div>

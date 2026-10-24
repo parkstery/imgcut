@@ -236,7 +236,31 @@ export default function App() {
   const handleRadialStart = useCallback(
     (source: CanvasElement) => {
       radialAngleLockedRef.current = false;
-      const baseSize = Math.max(source.width, source.height, 24);
+      
+      // If the source element is part of a group, get all elements in that group
+      const sourceElements = source.groupId
+        ? elements.filter((el) => el.groupId === source.groupId)
+        : [source];
+      
+      // Calculate bounding box of the source element(s)
+      let baseWidth: number, baseHeight: number;
+      if (sourceElements.length === 1) {
+        baseWidth = sourceElements[0].width;
+        baseHeight = sourceElements[0].height;
+      } else {
+        // Calculate bounding box of the group
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const el of sourceElements) {
+          minX = Math.min(minX, el.x);
+          minY = Math.min(minY, el.y);
+          maxX = Math.max(maxX, el.x + el.width);
+          maxY = Math.max(maxY, el.y + el.height);
+        }
+        baseWidth = maxX - minX;
+        baseHeight = maxY - minY;
+      }
+      
+      const baseSize = Math.max(baseWidth, baseHeight, 24);
       setRadialToolState({
         step: 'placing_center',
         radius: Math.max(120, Math.round(baseSize * 2)),
@@ -245,11 +269,12 @@ export default function App() {
         sweepAngle: 360,
         rotateMode: 'radial',
         sourceElement: source,
+        sourceElements: sourceElements, // Store all elements in the group
         previewElements: [],
       });
       showToast('① 캔버스를 클릭해 중심점 지정 → ② 마우스로 반지름 조절 → ③ Enter 확정');
     },
-    [showToast]
+    [elements, showToast]
   );
 
   /**
@@ -467,7 +492,7 @@ export default function App() {
    * Defined after pushHistory so the history snapshot can be pushed directly.
    */
   const handleRadialConfirm = useCallback(() => {
-    const { center, previewElements, hideSource, sourceElement } = radialToolState;
+    const { center, previewElements, hideSource, sourceElement, sourceElements } = radialToolState;
     if (!center || previewElements.length === 0) {
       showToast('방사상 위치를 먼저 지정하세요.');
       return;
@@ -481,7 +506,13 @@ export default function App() {
     // Optionally hide the source so only the finished ring remains.
     const nextElements = hideSource && sourceElement
       ? [
-          ...elements.map((el) => (el.id === sourceElement.id ? { ...el, visible: false } : el)),
+          ...elements.map((el) => {
+            // If source was part of a group, hide all group members
+            if (sourceElement.groupId && el.groupId === sourceElement.groupId) {
+              return { ...el, visible: false };
+            }
+            return el.id === sourceElement.id ? { ...el, visible: false } : el;
+          }),
           ...newElements,
         ]
       : [...elements, ...newElements];
@@ -495,6 +526,7 @@ export default function App() {
       previewElements: [],
       center: undefined,
       sourceElement: undefined,
+      sourceElements: undefined,
     }));
     showToast(`방사상 배열 ${newElements.length}개를 생성했습니다.`);
   }, [radialToolState, elements, layers, config, pushHistory, showToast]);
